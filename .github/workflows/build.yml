@@ -22,7 +22,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: out/make/*
+          path: |
+            out/make/squirrel.windows/x64/Nakama-1.0.0 Setup.exe
+            out/make/squirrel.windows/x64/NakamaSetup.msi
 
   build-macos:
     runs-on: macos-latest
@@ -39,7 +41,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: out/make/*
+          path: |
+            out/make/Nakama-1.0.0-arm64.dmg
+            out/make/zip/darwin/arm64/Nakama-darwin-arm64-1.0.0.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -56,4 +60,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-build
-          path: out/make/*
+          path: |
+            out/make/deb/x64/nakama_1.0.0_amd64.deb
+            out/make/rpm/x64/nakama-1.0.0-1.x86_64.rpm
