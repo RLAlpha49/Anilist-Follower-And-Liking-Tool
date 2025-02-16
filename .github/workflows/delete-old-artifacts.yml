@@ -13,6 +13,7 @@ jobs:
             - name: Delete artifacts from non-latest workflow runs
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  ARTIFACT_DELETE_TOKEN: ${{ secrets.ARTIFACT_DELETE_TOKEN }}
               run: |
                   #!/bin/bash
                   set -euo pipefail
@@ -30,7 +31,7 @@ jobs:
                   echo "Branch: $branch"
                   echo "Current commit: $current_sha"
 
-                  # List workflow runs for this branch (limit to 100; adjust if necessary)
+                  # List workflow runs for this branch
                   runs_json=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
                     "https://api.github.com/repos/${owner_repo}/actions/runs?branch=${branch}&per_page=100")
 
@@ -57,7 +58,7 @@ jobs:
 
                     for artifact_id in $artifact_ids; do
                       echo "Deleting artifact ID: $artifact_id from run $run_id"
-                      curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                      curl -s -X DELETE -H "Authorization: token ${ARTIFACT_DELETE_TOKEN}" \
                         "https://api.github.com/repos/${owner_repo}/actions/artifacts/${artifact_id}"
                     done
                   done
