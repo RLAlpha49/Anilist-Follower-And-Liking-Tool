@@ -45,12 +45,6 @@
 					"config": {}
 				},
 				{
-					"name": "@electron-forge/maker-pkg",
-					"config": {
-						"identity": null
-					}
-				},
-				{
 					"name": "@electron-forge/maker-deb",
 					"config": {}
 				},
