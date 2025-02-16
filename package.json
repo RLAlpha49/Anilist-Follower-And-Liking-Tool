@@ -1,138 +1,91 @@
 {
-	"name": "nakama",
-	"productName": "Nakama",
-	"version": "1.0.0",
-	"description": "Description",
-	"main": ".webpack/main",
-	"scripts": {
-		"start": "electron-forge start",
-		"package": "electron-forge package",
-		"make": "cross-env NODE_OPTIONS=--max-old-space-size=12288 electron-forge make",
-		"publish": "electron-forge publish",
-		"lint": "eslint --ext .ts,.tsx ."
-	},
-	"config": {
-		"forge": {
-			"packagerConfig": {
-				"asar": true,
-				"executableName": "nakama"
-			},
-			"rebuildConfig": {},
-			"makers": [
-				{
-					"name": "@electron-forge/maker-squirrel",
-					"config": {
-						"title": "Nakama",
-						"name": "Nakama",
-						"version": "1.0.0",
-						"exe": "Nakama.exe",
-						"setupExe": "Nakama-Setup.exe",
-						"noMsi": false,
-						"setupMsi": "Nakama-Setup.msi"
-					}
-				},
-				{
-					"name": "@electron-forge/maker-dmg",
-					"config": {
-						"format": "ULFO"
-					}
-				},
-				{
-					"name": "@electron-forge/maker-zip",
-					"platforms": [
-						"darwin"
-					],
-					"config": {}
-				},
-				{
-					"name": "@electron-forge/maker-deb",
-					"config": {}
-				},
-				{
-					"name": "@electron-forge/maker-rpm",
-					"config": {}
-				}
-			],
-			"plugins": [
-				{
-					"name": "@electron-forge/plugin-auto-unpack-natives",
-					"config": {}
-				},
-				{
-					"name": "@electron-forge/plugin-webpack",
-					"config": {
-						"mainConfig": "./config/webpack.main.config.js",
-						"renderer": {
-							"config": "./config/webpack.renderer.config.js",
-							"entryPoints": [
-								{
-									"html": "./src/renderer/index.html",
-									"js": "./src/renderer/renderer.ts",
-									"name": "main_window",
-									"preload": {
-										"js": "./src/preload/preload.ts"
-									}
-								}
-							]
-						}
-					}
-				},
-				{
-					"name": "@electron-forge/plugin-fuses",
-					"config": {
-						"version": "1",
-						"fuse": {
-							"runAsNode": false,
-							"enableCookieEncryption": true,
-							"enableNodeOptionsEnvironmentVariable": false,
-							"enableNodeCliInspectArguments": false,
-							"enableEmbeddedAsarIntegrityValidation": true,
-							"onlyLoadAppFromAsar": true
-						}
-					}
-				}
-			]
-		}
-	},
-	"devDependencies": {
-		"@electron-forge/cli": "^7.6.1",
-		"@electron-forge/maker-deb": "^7.6.1",
-		"@electron-forge/maker-dmg": "^7.6.1",
-		"@electron-forge/maker-pkg": "^7.6.1",
-		"@electron-forge/maker-rpm": "^7.6.1",
-		"@electron-forge/maker-squirrel": "^7.6.1",
-		"@electron-forge/maker-zip": "^7.6.1",
-		"@electron-forge/plugin-auto-unpack-natives": "^7.6.1",
-		"@electron-forge/plugin-fuses": "^7.6.1",
-		"@electron-forge/plugin-webpack": "^7.6.1",
-		"@electron/fuses": "^1.8.0",
-		"@types/react": "^19.0.8",
-		"@types/react-dom": "^19.0.3",
-		"@typescript-eslint/eslint-plugin": "^5.62.0",
-		"@typescript-eslint/parser": "^5.62.0",
-		"@vercel/webpack-asset-relocator-loader": "^1.7.3",
-		"cross-env": "^7.0.3",
-		"css-loader": "^6.11.0",
-		"electron": "34.2.0",
-		"eslint": "^8.57.1",
-		"eslint-plugin-import": "^2.31.0",
-		"fork-ts-checker-webpack-plugin": "^7.3.0",
-		"node-loader": "^2.1.0",
-		"style-loader": "^3.3.4",
-		"ts-loader": "^9.5.2",
-		"ts-node": "^10.9.2",
-		"typescript": "~4.5.4"
-	},
-	"keywords": [],
-	"author": {
-		"name": "RLAlpha49",
-		"email": "75044176+RLAlpha49@users.noreply.github.com"
-	},
-	"license": "MIT",
-	"dependencies": {
-		"electron-squirrel-startup": "^1.0.1",
-		"nakama": "file:",
-		"react": "^19.0.0",
-		"react-dom": "^19.0.0"
-	}
+  "name": "nakama",
+  "productName": "Nakama",
+  "version": "1.0.0",
+  "description": "Nakama",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:unit": "vitest",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test"
+  },
+  "author": "Alex Pettigrew <alexpettigrew29@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@electron-forge/cli": "^7.6.1",
+    "@electron-forge/maker-deb": "^7.6.1",
+    "@electron-forge/maker-dmg": "^7.6.1",
+    "@electron-forge/maker-rpm": "^7.6.1",
+    "@electron-forge/maker-squirrel": "^7.6.1",
+    "@electron-forge/maker-wix": "^7.6.1",
+    "@electron-forge/maker-zip": "^7.6.1",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.6.1",
+    "@electron-forge/plugin-fuses": "^7.6.1",
+    "@electron-forge/plugin-vite": "^7.6.1",
+    "@electron-forge/shared-types": "^7.4.0",
+    "@electron/fuses": "^1.8.0",
+    "@eslint/compat": "^1.2.6",
+    "@eslint/js": "^9.18.0",
+    "@playwright/test": "^1.50.1",
+    "@tailwindcss/postcss": "^4.0.3",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/eslint-config-prettier": "^6.11.3",
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "electron": "34.0.2",
+    "electron-devtools-installer": "^4.0.0",
+    "electron-playwright-helpers": "^1.7.1",
+    "eslint": "^9.19.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-prettier": "^5.2.3",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-compiler": "^19.0.0-beta-714736e-20250131",
+    "globals": "^15.14.0",
+    "jsdom": "^26.0.0",
+    "postcss": "^8.5.1",
+    "prettier": "^3.5.0",
+    "prettier-plugin-tailwindcss": "^0.6.11",
+    "tailwindcss": "^4.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.22.0",
+    "vite": "^6.0.11",
+    "vitest": "^3.0.4"
+  },
+  "dependencies": {
+    "@icons-pack/react-simple-icons": "^11.2.0",
+    "@radix-ui/react-navigation-menu": "^1.2.5",
+    "@radix-ui/react-slot": "^1.0.2",
+    "@radix-ui/react-toggle": "^1.1.1",
+    "@radix-ui/react-toggle-group": "^1.1.1",
+    "@tanstack/react-query": "^5.66.0",
+    "@tanstack/react-router": "^1.99.0",
+    "@tanstack/router-devtools": "^1.99.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "babel-plugin-react-compiler": "^19.0.0-beta-714736e-20250131",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron-squirrel-startup": "^1.0.1",
+    "lucide-react": "^0.475.0",
+    "nakama": "file:",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.1",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^3.24.1"
+  }
 }
