@@ -6,6 +6,7 @@ import { MakerRpm } from "@electron-forge/maker-rpm";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
+import { MakerZIP } from "@electron-forge/maker-zip";
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -18,6 +19,7 @@ const config: ForgeConfig = {
       noMsi: false,
     }),
     new MakerDMG({}, ["darwin"]),
+    new MakerZIP({}, ["darwin"]),
     new MakerRpm({}),
     new MakerDeb({}),
   ],
