@@ -14,7 +14,8 @@
 	"config": {
 		"forge": {
 			"packagerConfig": {
-				"asar": true
+				"asar": true,
+				"executableName": "nakama"
 			},
 			"rebuildConfig": {},
 			"makers": [
@@ -44,15 +45,17 @@
 					"config": {}
 				},
 				{
+					"name": "@electron-forge/maker-pkg",
+					"config": {
+						"identity": null
+					}
+				},
+				{
 					"name": "@electron-forge/maker-deb",
 					"config": {}
 				},
 				{
 					"name": "@electron-forge/maker-rpm",
-					"config": {}
-				},
-				{
-					"name": "@electron-forge/maker-pkg",
 					"config": {}
 				}
 			],
