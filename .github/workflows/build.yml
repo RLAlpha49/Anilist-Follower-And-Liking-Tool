@@ -61,5 +61,5 @@ jobs:
               with:
                   name: linux-build
                   path: |
-                      out/make/deb/x64/Nakama_1.0.0_amd64.deb
-                      out/make/rpm/x64/Nakama-1.0.0-1.x86_64.rpm
+                      out/make/deb/x64/nakama_1.0.0_amd64.deb
+                      out/make/rpm/x64/nakama-1.0.0-1.x86_64.rpm
