@@ -1,0 +1,144 @@
+{
+	"name": "nakama",
+	"productName": "Nakama",
+	"version": "1.0.0",
+	"description": "Description",
+	"main": ".webpack/main",
+	"scripts": {
+		"start": "electron-forge start",
+		"package": "electron-forge package",
+		"make": "cross-env NODE_OPTIONS=--max-old-space-size=12288 electron-forge make",
+		"publish": "electron-forge publish",
+		"lint": "eslint --ext .ts,.tsx ."
+	},
+	"config": {
+		"forge": {
+			"packagerConfig": {
+				"asar": true
+			},
+			"rebuildConfig": {},
+			"makers": [
+				{
+					"name": "@electron-forge/maker-squirrel",
+					"config": {
+						"title": "Nakama",
+						"name": "Nakama",
+						"version": "1.0.0",
+						"exe": "Nakama.exe",
+						"setupExe": "Nakama-Setup.exe",
+						"noMsi": false,
+						"setupMsi": "Nakama-Setup.msi"
+					}
+				},
+				{
+					"name": "@electron-forge/maker-dmg",
+					"config": {
+						"format": "ULFO"
+					}
+				},
+				{
+					"name": "@electron-forge/maker-zip",
+					"platforms": [
+						"darwin"
+					],
+					"config": {}
+				},
+				{
+					"name": "@electron-forge/maker-deb",
+					"config": {}
+				},
+				{
+					"name": "@electron-forge/maker-rpm",
+					"config": {}
+				},
+				{
+					"name": "@electron-forge/maker-appimage",
+					"config": {
+						"arch": [
+							"x64",
+							"arm64"
+						]
+					}
+				}
+			],
+			"plugins": [
+				{
+					"name": "@electron-forge/plugin-auto-unpack-natives",
+					"config": {}
+				},
+				{
+					"name": "@electron-forge/plugin-webpack",
+					"config": {
+						"mainConfig": "./webpack.main.config.ts",
+						"renderer": {
+							"config": "./webpack.renderer.config.ts",
+							"entryPoints": [
+								{
+									"html": "./src/index.html",
+									"js": "./src/renderer.ts",
+									"name": "main_window",
+									"preload": {
+										"js": "./src/preload.ts"
+									}
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "@electron-forge/plugin-fuses",
+					"config": {
+						"version": "1",
+						"fuse": {
+							"runAsNode": false,
+							"enableCookieEncryption": true,
+							"enableNodeOptionsEnvironmentVariable": false,
+							"enableNodeCliInspectArguments": false,
+							"enableEmbeddedAsarIntegrityValidation": true,
+							"onlyLoadAppFromAsar": true
+						}
+					}
+				}
+			]
+		}
+	},
+	"devDependencies": {
+		"@electron-forge/cli": "^7.6.1",
+		"@electron-forge/maker-deb": "^7.6.1",
+		"@electron-forge/maker-rpm": "^7.6.1",
+		"@electron-forge/maker-squirrel": "^7.6.1",
+		"@electron-forge/maker-zip": "^7.6.1",
+		"@electron-forge/plugin-auto-unpack-natives": "^7.6.1",
+		"@electron-forge/plugin-fuses": "^7.6.1",
+		"@electron-forge/plugin-webpack": "^7.6.1",
+		"@electron/fuses": "^1.8.0",
+		"@types/react": "^19.0.8",
+		"@types/react-dom": "^19.0.3",
+		"@typescript-eslint/eslint-plugin": "^5.62.0",
+		"@typescript-eslint/parser": "^5.62.0",
+		"@vercel/webpack-asset-relocator-loader": "^1.7.3",
+		"cross-env": "^7.0.3",
+		"css-loader": "^6.11.0",
+		"electron": "34.2.0",
+		"eslint": "^8.57.1",
+		"eslint-plugin-import": "^2.31.0",
+		"fork-ts-checker-webpack-plugin": "^7.3.0",
+		"node-loader": "^2.1.0",
+		"style-loader": "^3.3.4",
+		"ts-loader": "^9.5.2",
+		"ts-node": "^10.9.2",
+		"typescript": "~4.5.4"
+	},
+	"keywords": [],
+	"author": {
+		"name": "RLAlpha49",
+		"email": "75044176+RLAlpha49@users.noreply.github.com"
+	},
+	"license": "MIT",
+	"dependencies": {
+		"electron-squirrel-startup": "^1.0.1",
+		"nakama": "file:",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0"
+	}
+}
