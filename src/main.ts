@@ -1,7 +1,9 @@
 import { app, BrowserWindow } from "electron";
+import squirrelStartup from "electron-squirrel-startup";
+
+if (squirrelStartup) app.quit();
+
 import registerListeners from "./helpers/ipc/listeners-register";
-// "electron-squirrel-startup" seems broken when packaging with vite
-//import started from "electron-squirrel-startup";
 import path from "path";
 import {
   installExtension,
@@ -20,7 +22,6 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: true,
       nodeIntegrationInSubFrames: false,
-
       preload: preload,
     },
     titleBarStyle: "hidden",

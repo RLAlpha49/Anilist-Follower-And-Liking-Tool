@@ -28,6 +28,7 @@ function WindowButtons() {
   return (
     <div className="flex">
       <button
+        data-testid="minimize-btn"
         title="Minimize"
         type="button"
         className="p-2 hover:bg-slate-300"
@@ -44,7 +45,8 @@ function WindowButtons() {
         </svg>
       </button>
       <button
-        title="Maximize"
+        data-testid="restore-btn"
+        title="Maximize/Restore"
         type="button"
         className="p-2 hover:bg-slate-300"
         onClick={maximizeWindow}
