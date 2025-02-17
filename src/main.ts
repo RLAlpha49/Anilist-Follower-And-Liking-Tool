@@ -67,7 +67,6 @@ app.on("activate", () => {
 ipcMain.on("save-token", async (event, token: string) => {
   const store = await getStore();
   store.set("anilist_token", token);
-  console.log("Token saved to file:", token);
 });
 
 ipcMain.handle("get-token", async () => {
@@ -78,5 +77,4 @@ ipcMain.handle("get-token", async () => {
 ipcMain.on("clear-token", async () => {
   const store = await getStore();
   store.delete("anilist_token");
-  console.log("Token cleared from file");
 });

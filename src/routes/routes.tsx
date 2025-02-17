@@ -4,6 +4,7 @@ import HomePage from "@/pages/HomePage";
 import FollowerAndFollowing from "@/pages/FollowerAndFollowingPage";
 import ActivityPage from "@/pages/ActivityPage";
 import SettingsPage from "@/pages/SettingsPage";
+import RandomFollowPage from "@/pages/RandomFollowPage";
 
 // TODO: Steps to add a new route:
 // 1. Create a new page component in the '../pages/' directory (e.g., NewPage.tsx)
@@ -48,9 +49,15 @@ export const ActivityRoute = createRoute({
   component: ActivityPage,
 });
 
+export const RandomFollowRoute = createRoute({
+  getParentRoute: () => FollowerAndFollowingRoute,
+  path: "/random",
+  component: RandomFollowPage,
+});
+
 export const rootTree = RootRoute.addChildren([
   HomeRoute,
   SettingsRoute,
-  FollowerAndFollowingRoute,
+  FollowerAndFollowingRoute.addChildren([RandomFollowRoute]),
   ActivityRoute,
 ]);

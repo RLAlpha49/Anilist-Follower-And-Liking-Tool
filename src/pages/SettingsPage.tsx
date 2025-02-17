@@ -13,7 +13,6 @@ export default function SettingsPage() {
       (storedToken: string) => {
         if (storedToken) {
           setIsLoggedIn(true);
-          console.log("Stored token found:", storedToken);
         }
       },
     );
@@ -40,7 +39,7 @@ export default function SettingsPage() {
   return (
     <div
       className="bg-accent/40 custom-scrollbar m-4 flex flex-col overflow-x-auto rounded-lg p-4"
-      style={{ height: "93.5%" }}
+      style={{ height: "calc(100% - 56px)" }}
     >
       <div className="flex flex-1 flex-col items-center gap-4">
         <div className="text-center">
@@ -125,7 +124,7 @@ export default function SettingsPage() {
         <div className="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
           <div className="relative h-5/6 w-11/12 rounded bg-white shadow-lg md:w-3/4 lg:w-1/2">
             <button
-              className="absolute top-2 right-2 rounded bg-accent px-2 py-1"
+              className="bg-accent absolute top-2 right-2 rounded px-2 py-1"
               onClick={() => setShowOAuthModal(false)}
             >
               Exit

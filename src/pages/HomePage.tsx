@@ -13,7 +13,7 @@ export default function HomePage() {
   return (
     <div
       className="bg-accent/40 custom-scrollbar m-4 flex flex-col overflow-x-auto rounded-lg p-4"
-      style={{ height: "93.5%" }}
+      style={{ height: "calc(100% - 56px)" }}
     >
       <div className="flex flex-1 flex-col items-center gap-4">
         {/* Hero Section with Gradient */}
