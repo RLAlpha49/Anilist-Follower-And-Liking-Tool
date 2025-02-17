@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import squirrelStartup from "electron-squirrel-startup";
+import { getStore } from "./main-store";
 
 if (squirrelStartup) app.quit();
 
@@ -21,6 +22,7 @@ function createWindow() {
       devTools: inDevelopment,
       contextIsolation: true,
       nodeIntegration: true,
+      webviewTag: true,
       nodeIntegrationInSubFrames: false,
       preload: preload,
     },
@@ -61,3 +63,20 @@ app.on("activate", () => {
   }
 });
 //osX only ends
+
+ipcMain.on("save-token", async (event, token: string) => {
+  const store = await getStore();
+  store.set("anilist_token", token);
+  console.log("Token saved to file:", token);
+});
+
+ipcMain.handle("get-token", async () => {
+  const store = await getStore();
+  return store.get("anilist_token");
+});
+
+ipcMain.on("clear-token", async () => {
+  const store = await getStore();
+  store.delete("anilist_token");
+  console.log("Token cleared from file");
+});

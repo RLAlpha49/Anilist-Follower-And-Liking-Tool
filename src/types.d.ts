@@ -18,7 +18,14 @@ interface ElectronWindow {
   close: () => Promise<void>;
 }
 
+interface ElectronAPI {
+  saveToken: (token: string) => Promise<void> | void;
+  getToken: () => Promise<string> | string;
+  clearToken: () => Promise<void> | void;
+}
+
 declare interface Window {
   themeMode: ThemeModeContext;
   electronWindow: ElectronWindow;
+  electronAPI: ElectronAPI;
 }

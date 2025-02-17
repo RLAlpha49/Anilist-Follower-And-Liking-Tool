@@ -79,6 +79,7 @@
     "babel-plugin-react-compiler": "^19.0.0-beta-714736e-20250131",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-store": "^10.0.1",
     "lucide-react": "^0.475.0",
     "nakama": "file:",
     "react": "^19.0.0",

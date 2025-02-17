@@ -19,7 +19,7 @@ export default function NavigationMenu() {
             <NavigationMenuItem>
               <Link to="/settings">
                 <NavigationMenuLink
-                  className={`${navigationMenuTriggerStyle()} !bg-accent/50 w-10 h-10 p-2`}
+                  className={`${navigationMenuTriggerStyle()} !bg-accent/50 h-10 w-10 p-2`}
                 >
                   <Settings size={16} />
                 </NavigationMenuLink>
