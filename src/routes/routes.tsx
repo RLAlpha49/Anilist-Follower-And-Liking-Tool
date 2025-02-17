@@ -3,6 +3,7 @@ import { RootRoute } from "./__root";
 import HomePage from "@/pages/HomePage";
 import FollowerAndFollowing from "@/pages/FollowerAndFollowingPage";
 import ActivityPage from "@/pages/ActivityPage";
+import SettingsPage from "@/pages/SettingsPage";
 
 // TODO: Steps to add a new route:
 // 1. Create a new page component in the '../pages/' directory (e.g., NewPage.tsx)
@@ -29,6 +30,12 @@ export const HomeRoute = createRoute({
   component: HomePage,
 });
 
+export const SettingsRoute = createRoute({
+  getParentRoute: () => RootRoute,
+  path: "/settings",
+  component: SettingsPage,
+});
+
 export const FollowerAndFollowingRoute = createRoute({
   getParentRoute: () => RootRoute,
   path: "/follower-and-following",
@@ -43,6 +50,7 @@ export const ActivityRoute = createRoute({
 
 export const rootTree = RootRoute.addChildren([
   HomeRoute,
+  SettingsRoute,
   FollowerAndFollowingRoute,
   ActivityRoute,
 ]);

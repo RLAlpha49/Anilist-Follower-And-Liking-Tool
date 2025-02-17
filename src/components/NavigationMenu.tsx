@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "@tanstack/react-router";
+import { Settings } from "lucide-react";
 import {
   NavigationMenu as NavigationMenuBase,
   NavigationMenuItem,
@@ -15,6 +16,15 @@ export default function NavigationMenu() {
       <NavigationMenuBase className="text-muted-foreground px-2 font-mono">
         <div className="flex w-full items-center">
           <NavigationMenuList className="flex space-x-4">
+            <NavigationMenuItem>
+              <Link to="/settings">
+                <NavigationMenuLink
+                  className={`${navigationMenuTriggerStyle()} !bg-accent/50 w-10 h-10 p-2`}
+                >
+                  <Settings size={16} />
+                </NavigationMenuLink>
+              </Link>
+            </NavigationMenuItem>
             <NavigationMenuItem>
               <Link to="/">
                 <NavigationMenuLink
