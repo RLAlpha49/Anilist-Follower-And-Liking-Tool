@@ -47,7 +47,7 @@ test("navigates to Follower And Following page", async () => {
   await page.click('[data-testid="nav-followers"]');
   const heading = await page.waitForSelector("h1");
   const text = await heading.textContent();
-  expect(text).toBe("Follower And Following");
+  expect(text).toBe("Relationship Manager");
 });
 
 test("navigates to Activity Page", async () => {

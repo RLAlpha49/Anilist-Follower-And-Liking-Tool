@@ -2,7 +2,7 @@ import {
   getUserId,
   getFollowing,
   getGlobalActivities,
-  getMultipleFollowerCounts,
+  getMultipleUserRelations,
   followUser,
   delayWithSignal,
 } from "./anilistApi";
@@ -95,7 +95,13 @@ export async function followRandomUsers(
 
       const candidateUserIdsArray = Array.from(candidateUserIds);
       const followerCounts = await apiCallWithProgress(() =>
-        getMultipleFollowerCounts(candidateUserIdsArray, signal, onProgress),
+        getMultipleUserRelations(
+          candidateUserIdsArray,
+          signal,
+          onProgress,
+          "followers",
+          { returnIds: false },
+        ),
       );
 
       let peopleFollowedThisPage = 0;
@@ -108,7 +114,10 @@ export async function followRandomUsers(
         }
 
         const followerCount = followerCounts[userId];
-        if (followerCount >= followerThreshold) {
+        if (
+          typeof followerCount === "number" &&
+          followerCount >= followerThreshold
+        ) {
           onProgress?.(
             `Attempting to follow user ${userId} (Follower Count: ${followerCount})...`,
           );

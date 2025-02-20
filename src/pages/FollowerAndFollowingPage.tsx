@@ -55,12 +55,16 @@ export default function FollowerAndFollowing() {
                 Users who aren&apos;t following you back
               </p>
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" className="h-10">
-                  View List
-                </Button>
-                <Button variant="outline" className="h-10">
-                  Bulk Unfollow
-                </Button>
+                <Link to="/follower-and-following/not-following-back">
+                  <Button variant="outline" className="h-10 w-full">
+                    View List
+                  </Button>
+                </Link>
+                <Link to="/follower-and-following/not-following-back">
+                  <Button variant="outline" className="h-10 w-full">
+                    Bulk Unfollow
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>

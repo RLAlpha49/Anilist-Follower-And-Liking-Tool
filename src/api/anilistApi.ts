@@ -318,45 +318,196 @@ interface GetMultipleFollowerCountsData {
   [key: string]: FollowerPageData;
 }
 
-export async function getMultipleFollowerCounts(
+interface GetFollowersPageData {
+  Page: {
+    pageInfo: {
+      currentPage: number;
+      lastPage: number;
+      hasNextPage: boolean;
+    };
+    followers: { id: number }[];
+  };
+}
+
+interface GetFollowingPageData {
+  Page: {
+    pageInfo: {
+      currentPage: number;
+      lastPage: number;
+      hasNextPage: boolean;
+    };
+    following: { id: number }[];
+  };
+}
+
+type RelationResult<T extends "followers" | "following"> = T extends "followers"
+  ? GetFollowersPageData
+  : GetFollowingPageData;
+
+async function fetchAllUserRelationIds<T extends "followers" | "following">(
+  userId: number,
+  relation: T,
+  signal?: AbortSignal,
+  onProgress?: (message: string) => void,
+  perPage: number = 50,
+): Promise<number[]> {
+  let page = 1;
+  const allIds: number[] = [];
+  while (true) {
+    const query = `
+      query ($userId: Int!, $page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            currentPage
+            lastPage
+            hasNextPage
+          }
+          ${relation}(userId: $userId) {
+            id
+          }
+        }
+      }
+    `;
+    let retryCount = 0;
+    const maxRetries = 5;
+    let data: GraphQLResult<RelationResult<T>>;
+    while (true) {
+      try {
+        data = await apiRequest<RelationResult<T>>(
+          query,
+          { userId, page, perPage },
+          signal,
+          onProgress,
+        );
+        break;
+      } catch (err) {
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          throw err;
+        }
+        await delayWithSignal(61000, signal);
+      }
+    }
+    const pageData = data.data.Page;
+    let ids: number[];
+    if (relation === "followers") {
+      const followersPage = pageData as GetFollowersPageData["Page"];
+      ids = followersPage.followers.map((item: { id: number }) => item.id);
+    } else {
+      const followingPage = pageData as GetFollowingPageData["Page"];
+      ids = followingPage.following.map((item: { id: number }) => item.id);
+    }
+    allIds.push(...ids);
+    if (onProgress) {
+      onProgress(`User ${userId}: Fetched page ${page} with ${ids.length} IDs`);
+    }
+    if (!pageData.pageInfo.hasNextPage) {
+      break;
+    }
+    page++;
+  }
+  return allIds;
+}
+
+export async function getMultipleUserRelations(
   userIds: number[],
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
-): Promise<Record<number, number>> {
+  relation: "followers" | "following" = "followers",
+  options?: { returnIds?: boolean; perPage?: number },
+): Promise<Record<number, number> | Record<number, number[]>> {
   if (userIds.length === 0) return {};
 
-  // Construct GraphQL query by aliasing each request with "followers<userId>"
-  const queryParts = userIds
-    .map((userId) => {
-      return `followers${userId}: Page(perPage: 1) {
-      pageInfo {
-        total
-      }
-      followers(userId: ${userId}) {
-        id
-      }
-    }`;
-    })
-    .join("\n");
+  if (options?.returnIds) {
+    // Fetch all pages per userID using the helper function
+    const result: Record<number, number[]> = {};
+    for (const userId of userIds) {
+      result[userId] = await fetchAllUserRelationIds(
+        userId,
+        relation,
+        signal,
+        onProgress,
+        options.perPage ?? 50,
+      );
+    }
+    return result;
+  } else {
+    // Count mode: use a single alias query with perPage=1
+    const perPageValue = 1;
+    const queryParts = userIds
+      .map((userId) => {
+        return `${relation}${userId}: Page(perPage: ${perPageValue}) {
+          pageInfo {
+            total
+          }
+          ${relation}(userId: ${userId}) {
+            id
+          }
+        }`;
+      })
+      .join("\n");
 
+    const query = `
+      query {
+        ${queryParts}
+      }
+    `;
+    const data = await apiRequest<GetMultipleFollowerCountsData>(
+      query,
+      {},
+      signal,
+      onProgress,
+    );
+
+    const result: Record<number, number> = {};
+    userIds.forEach((userId) => {
+      const pageData = data.data[`${relation}${userId}`];
+      result[userId] =
+        pageData && pageData.pageInfo ? pageData.pageInfo.total : 0;
+    });
+    return result;
+  }
+}
+
+interface GetFollowersData {
+  Page: {
+    followers: { id: number }[];
+  };
+}
+
+export async function getFollowers(
+  userId: number,
+  signal?: AbortSignal,
+): Promise<number[]> {
   const query = `
-    query {
-      ${queryParts}
+    query ($userId: Int!) {
+      Page(page: 1, perPage: 50) {
+        followers(userId: $userId) {
+          id
+        }
+      }
     }
   `;
-  const data = await apiRequest<GetMultipleFollowerCountsData>(
+  const data = await apiRequest<GetFollowersData>(query, { userId }, signal);
+  return data.data.Page?.followers.map((f) => f.id);
+}
+
+export async function unfollowUser(
+  userId: number,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const query = `
+    mutation ($userId: Int!) {
+      ToggleFollow(userId: $userId) {
+        id
+        isFollowing
+      }
+    }
+  `;
+  const response = await apiRequest<ToggleFollowData>(
     query,
-    {},
+    { userId },
     signal,
-    onProgress,
   );
-  const result: Record<number, number> = {};
-  userIds.forEach((userId) => {
-    const followersData = data.data[`followers${userId}`];
-    result[userId] =
-      followersData && followersData.pageInfo
-        ? followersData.pageInfo.total
-        : 0;
-  });
-  return result;
+  return response?.data?.ToggleFollow?.isFollowing === false;
 }
