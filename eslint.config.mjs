@@ -24,9 +24,20 @@ export default [
       "react-compiler/react-compiler": "error",
     },
   },
-  { languageOptions: { globals: globals.browser } },
+  {
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
   pluginJs.configs.recommended,
-  pluginReact.configs.flat.recommended,
+  {
+    ...pluginReact.configs.flat.recommended,
+    settings: {
+      react: {
+        version: "19.0.0",
+      },
+    },
+  },
   eslintPluginPrettierRecommended,
   ...tseslint.configs.recommended,
 ];
