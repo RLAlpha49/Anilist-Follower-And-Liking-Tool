@@ -1,83 +1,137 @@
-# Nakama
+# Nakama - AniList Relationship Manager
 
-Nakama is an Anilist Relationship Manager application.
+Nakama is a desktop application built with Electron and React that helps AniList users manage their social relationships and engagement on the platform.
 
-## GitHub Workflows
+## Features
 
-This project uses GitHub Actions to automate testing, code quality checks, and dependency management:
+### Relationship Management
 
-### Tests
+- Find users who aren't following you back
+- Discover users you're not following back
+- Perform bulk unfollow/follow actions
+- Manage exclusion lists for important accounts
 
-The `Tests` workflow runs on every push to the `electron-app` branch, on pull requests, and on a weekly schedule (Thursday at midnight). It performs:
+### Activity Interactions
 
-- **Unit Tests**: Runs Vitest unit tests
-- **E2E Tests**: Runs Playwright end-to-end tests
+- Like followed users' activities
+- Auto-like following feed
+- Customize liking intervals
+- Filter by activity types
 
-### Code Quality
+### Smart Follow
 
-The `Code Quality` workflow runs on every push to the `electron-app` branch, on pull requests, and on a weekly schedule (Wednesday at midnight). It performs:
+- Follow random users from the global feed
+- Get smart followback suggestions
+- Activity-based following
+- Follow rate limiting to avoid triggering AniList limits
 
-- **Linting**: Runs ESLint to check code quality
-- **Formatting**: Verifies code follows Prettier formatting rules
-- **Package Updates Check**: Displays available package updates
+### Analytics
 
-### Check for Package Updates
+- Track follower and following counts
+- Monitor engagement metrics
+- Visualize relationship growth
 
-The `Check for Package Updates` workflow can be manually triggered from the Actions tab. It:
+## Installation
 
-- Checks for available npm package updates
-- Can automatically create a pull request with the updates (optional)
-- Also runs on a weekly schedule (Monday at midnight)
+### Requirements
 
-To run this workflow:
-1. Go to the Actions tab
-2. Select "Check for Package Updates" workflow
-3. Click "Run workflow"
-4. Optionally enable "Automatically update package.json"
-5. Click "Run workflow" again
+- Node.js 16+
+- npm or yarn
+
+### Setup
+
+1. Clone this repository
+
+```bash
+git clone https://github.com/RLAlpha49/nakama.git
+cd nakama
+```
+
+2. Install dependencies
+
+```bash
+npm install
+# or
+yarn
+```
+
+3. Start the application in development mode
+
+```bash
+npm start
+# or
+yarn start
+```
+
+4. To build for production
+
+```bash
+npm run make
+# or
+yarn make
+```
+
+## Authentication
+
+Nakama uses OAuth to connect to your AniList account. You'll need to authenticate the first time you use the application. Your authentication token is stored securely on your machine.
+
+## Technology Stack
+
+- **Framework**: Electron
+- **Frontend**: React 19, TypeScript, TailwindCSS
+- **State Management**: React Query, Context API
+- **Routing**: TanStack Router
+- **Testing**: Vitest, Playwright
+- **API**: AniList GraphQL API
 
 ## Development
 
-[Add development setup instructions here]
+### Project Structure
 
-## Testing
+- `/src`: Main application code
+  - `/api`: API integration with AniList
+  - `/components`: Reusable UI components
+  - `/pages`: Application pages/screens
+  - `/routes`: Application routing
+  - `/utils`: Utility functions
+  - `/helpers`: Helper functions
+  - `/styles`: Global styles and themes
+
+### Building
+
+The application uses Electron Forge for building and packaging:
 
 ```bash
+# Package the app
+npm run package
+
+# Make distributable
+npm run make
+```
+
+### Testing
+
+```bash
+# Run all tests
+npm run test:all
+
 # Run unit tests
 npm run test:unit
 
-# Run e2e tests
+# Run E2E tests
 npm run test:e2e
-
-# Run all tests
-npm test
-
-# Run unit tests in watch mode
-npm run test:watch
 ```
 
-## Formatting and Linting
+## Contributing
 
-```bash
-# Check code formatting
-npm run format
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-# Fix code formatting
-npm run format:write
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-# Run linter
-npm run lint
-```
+## License
 
-## Package Management
-
-```bash
-# Check for package updates
-npx npm-check-updates
-
-# Update all packages in package.json
-npm run update
-
-# Install dependencies after updating
-npm install
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
