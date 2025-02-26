@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,54 +22,200 @@ export default function NotFollowingBack() {
   const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Track recent messages to avoid duplicates (not just the last one)
+  const [recentMessages, setRecentMessages] = useState<string[]>([]);
+  // Track if we're currently rate limited to avoid duplicate messages
+  const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+
+  // Use a ref to track if we've started loading data to prevent double execution
+  const dataLoadStarted = useRef<boolean>(false);
+  // Use a ref to track processed operations to prevent duplicates
+  const processedOps = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const loadData = async () => {
+      // If we've already started loading data, don't start again
+      if (dataLoadStarted.current) return;
+      dataLoadStarted.current = true;
+
       try {
         setLoading(true);
-        const currentUserId = await getUserId();
-        const followers = await getMultipleUserRelations(
-          [currentUserId],
-          undefined,
-          (message) => setProgress((prev) => [...prev, message]),
-          "followers",
-          { returnIds: true },
-        );
-        const following = await getMultipleUserRelations(
-          [currentUserId],
-          undefined,
-          (message) => setProgress((prev) => [...prev, message]),
-          "following",
-          { returnIds: true },
-        );
+        setProgress(["Starting to fetch data..."]);
 
-        const excluded = Array.from(loadExcludedIds());
-        const followingData = following[currentUserId];
-        const followerData = followers[currentUserId];
-        const followingIds: number[] = Array.isArray(followingData)
-          ? followingData
-          : typeof followingData === "number"
-            ? [followingData]
-            : [];
-        const followerIds: number[] = Array.isArray(followerData)
-          ? followerData
-          : typeof followerData === "number"
-            ? [followerData]
-            : [];
+        const opKey = "getUserId";
+        if (!processedOps.current.has(opKey)) {
+          processedOps.current.add(opKey);
+          const currentUserId = await getUserId();
+          addUniqueMessage(`Obtained current user ID: ${currentUserId}`);
 
-        const notFollowing = followingIds.filter(
-          (id) => !followerIds.includes(id) && !excluded.includes(id),
-        );
-        console.log(notFollowing);
+          addUniqueMessage("⏳ Fetching followers list...");
+          const followers = await getMultipleUserRelations(
+            [currentUserId],
+            undefined,
+            (message) => {
+              if (message.includes("Fetched")) {
+                // Only add messages that contain "Fetched" and aren't duplicates
+                addUniqueMessage(`📥 FOLLOWERS: ${message}`);
+              } else if (message.includes("Retrying") && !isRateLimited) {
+                // Only show one rate limiting message at a time
+                setIsRateLimited(true);
 
-        setNotFollowingBack(notFollowing);
-        setExcludedIds(excluded);
-        setProgress([`Found ${notFollowing.length} users not following back`]);
+                // Always use 61 seconds for rate limit retries
+                const timeDisplayed = "1m 1s";
+                addUniqueMessage(
+                  `⚠️ RATE LIMITED: ${message.replace(/Retrying in [\d.]+[ms]+/i, "Retrying in 1m 1s")}`,
+                );
+
+                // Always use 61 seconds (61000ms) for the wait
+                setTimeout(() => {
+                  setIsRateLimited(false);
+                  addUniqueMessage(
+                    `✅ Rate limit wait completed (${timeDisplayed})`,
+                  );
+                }, 61000);
+              }
+            },
+            "followers",
+            { returnIds: true },
+          );
+
+          addUniqueMessage("⏳ Fetching following list...");
+          setIsRateLimited(false); // Reset rate limited state before next operation
+
+          const following = await getMultipleUserRelations(
+            [currentUserId],
+            undefined,
+            (message) => {
+              if (message.includes("Fetched")) {
+                // Only add messages that contain "Fetched" and aren't duplicates
+                addUniqueMessage(`📤 FOLLOWING: ${message}`);
+              } else if (message.includes("Retrying") && !isRateLimited) {
+                // Only show one rate limiting message at a time
+                setIsRateLimited(true);
+
+                // Always use 61 seconds for rate limit retries
+                const timeDisplayed = "1m 1s";
+                addUniqueMessage(
+                  `⚠️ RATE LIMITED: ${message.replace(/Retrying in [\d.]+[ms]+/i, "Retrying in 1m 1s")}`,
+                );
+
+                // Always use 61 seconds (61000ms) for the wait
+                setTimeout(() => {
+                  setIsRateLimited(false);
+                  addUniqueMessage(
+                    `✅ Rate limit wait completed (${timeDisplayed})`,
+                  );
+                }, 61000);
+              }
+            },
+            "following",
+            { returnIds: true },
+          );
+
+          const excluded = Array.from(loadExcludedIds());
+          const followingData = following[currentUserId];
+          const followerData = followers[currentUserId];
+          const followingIds: number[] = Array.isArray(followingData)
+            ? followingData
+            : typeof followingData === "number"
+              ? [followingData]
+              : [];
+          const followerIds: number[] = Array.isArray(followerData)
+            ? followerData
+            : typeof followerData === "number"
+              ? [followerData]
+              : [];
+
+          addUniqueMessage(
+            `✅ Completed: Found ${followingIds.length} following and ${followerIds.length} followers`,
+          );
+
+          const notFollowing = followingIds.filter(
+            (id) => !followerIds.includes(id) && !excluded.includes(id),
+          );
+
+          setNotFollowingBack(notFollowing);
+          setExcludedIds(excluded);
+          addUniqueMessage(
+            `✅ Analysis complete: Found ${notFollowing.length} users not following back`,
+          );
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load data");
+        addUniqueMessage(
+          `❌ ERROR: ${err instanceof Error ? err.message : "Failed to load data"}`,
+        );
       } finally {
         setLoading(false);
+        setIsRateLimited(false);
       }
     };
+
+    // Helper function to add a message only if it's not a duplicate
+    const addUniqueMessage = (message: string) => {
+      // Keep track of the last 10 messages to check for duplicates
+      const MAX_RECENT_MESSAGES = 10;
+
+      // Create a unique fingerprint for this message
+      const msgFingerprint = message.replace(/\d+/g, (match) => {
+        // Keep the page numbers for page-specific messages
+        if (
+          message.includes("page") &&
+          message.match(/page (\d+)/)?.[1] === match
+        ) {
+          return match;
+        }
+        return "X";
+      });
+
+      // Check if this exact message already exists in recent messages
+      if (recentMessages.includes(message)) {
+        return;
+      }
+
+      // Check for "pattern duplicates" - same message with just different numbers
+      if (message.includes("Fetched page") || message.includes("User")) {
+        // Check if we have a message with the same pattern
+        const isDuplicate = recentMessages.some((oldMsg) => {
+          const oldPattern = oldMsg.replace(/\d+/g, (match) => {
+            // Keep the page numbers for page-specific messages
+            if (
+              oldMsg.includes("page") &&
+              oldMsg.match(/page (\d+)/)?.[1] === match
+            ) {
+              return match;
+            }
+            return "X";
+          });
+
+          return (
+            oldPattern === msgFingerprint &&
+            // If it's about the same page, it's definitely a duplicate
+            message.includes("page") &&
+            oldMsg.includes("page") &&
+            message.match(/page (\d+)/)?.at(1) ===
+              oldMsg.match(/page (\d+)/)?.at(1)
+          );
+        });
+
+        if (isDuplicate) {
+          return;
+        }
+      }
+
+      // Add the message to recent messages for future duplicate checking
+      setRecentMessages((prev) => {
+        const updated = [...prev, message];
+        // Keep only the most recent messages
+        return updated.length > MAX_RECENT_MESSAGES
+          ? updated.slice(updated.length - MAX_RECENT_MESSAGES)
+          : updated;
+      });
+
+      // Add the message to the progress
+      setProgress((prev) => [...prev, message]);
+    };
+
     loadData();
   }, []);
 
@@ -217,7 +363,21 @@ export default function NotFollowingBack() {
                 {progress.map((msg, index) => (
                   <div
                     key={index}
-                    className="rounded-lg bg-blue-100/50 p-3 dark:bg-blue-900/20"
+                    className={`rounded-lg p-3 ${
+                      msg.includes("ERROR")
+                        ? "bg-red-100/50 dark:bg-red-900/20"
+                        : msg.includes("RATE LIMITED")
+                          ? "bg-yellow-100/50 dark:bg-yellow-900/20"
+                          : msg.includes("Rate limit wait completed")
+                            ? "bg-green-100/50 dark:bg-green-900/20"
+                            : msg.includes("FOLLOWERS")
+                              ? "bg-blue-100/50 dark:bg-blue-900/20"
+                              : msg.includes("FOLLOWING")
+                                ? "bg-purple-100/50 dark:bg-purple-900/20"
+                                : msg.includes("complete")
+                                  ? "bg-green-100/50 dark:bg-green-900/20"
+                                  : "bg-blue-100/50 dark:bg-blue-900/20"
+                    }`}
                   >
                     {msg}
                   </div>

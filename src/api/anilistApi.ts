@@ -54,7 +54,8 @@ export async function apiRequest<T>(
   onProgress?: (message: string) => void,
 ): Promise<GraphQLResult<T>> {
   let retries = 3;
-  let delayTime = 1000;
+  const delayTime = 61000;
+  let attempt = 1;
 
   while (true) {
     const token = await Promise.resolve(window.electronAPI.getToken()).then(
@@ -62,6 +63,10 @@ export async function apiRequest<T>(
     );
 
     try {
+      if (attempt > 1) {
+        onProgress?.(`Attempt ${attempt} - Sending request...`);
+      }
+
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
@@ -84,20 +89,22 @@ export async function apiRequest<T>(
         }
         return result;
       } else if (response.status === 429) {
-        const retryAfterHeader = response.headers.get("Retry-After");
-        const waitTime = retryAfterHeader
-          ? parseFloat(retryAfterHeader) * 1000 + 1000
-          : 61000;
-        console.warn(`Rate limited. Retrying after ${waitTime} ms...`);
-        await delayWithSignal(waitTime, signal);
+        console.warn(`Rate limited. Retrying after 61 seconds...`);
+        onProgress?.(`Retrying in 1m 1s - Rate limit hit (429)`);
+
+        await delayWithSignal(delayTime, signal);
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        delayTime *= 2;
         retries--;
+        attempt++;
         if (retries <= 0) {
-          throw new Error("Max retries reached due to rate limiting");
+          const errMsg = "Max retries reached due to rate limiting";
+          onProgress?.(errMsg);
+          throw new Error(errMsg);
         }
       } else {
         console.error(response);
+        const errMsg = `Request failed with status ${response.status}: ${response.statusText}`;
+        onProgress?.(errMsg);
         const err: Error & { response?: Response } = new Error(
           `GraphQL query failed: ${response.statusText}`,
         );
@@ -107,6 +114,7 @@ export async function apiRequest<T>(
     } catch (error: unknown) {
       if (error instanceof Error && error.name === "AbortError") {
         console.warn("Request aborted by user.");
+        onProgress?.("Request aborted by user");
         throw error;
       }
 
@@ -114,21 +122,29 @@ export async function apiRequest<T>(
       if (error instanceof Error) {
         console.log(error.message);
       }
+
       if (retries <= 0) {
+        onProgress?.(`Max retries exceeded. Request failed.`);
         throw error;
       }
-      const currentWait =
+
+      // Expanded check for rate limiting in error messages
+      const isRateLimited =
         error instanceof Error &&
-        (error.message.includes("429") ||
-          error.message.includes("Failed to fetch"))
-          ? 61000
-          : delayTime;
-      console.warn(`Request failed. Retrying in ${currentWait} ms...`);
-      onProgress?.(`Request failed. Retrying in ${currentWait} ms...`);
-      await delayWithSignal(currentWait, signal);
+        (error.message.toLowerCase().includes("429") ||
+          error.message.toLowerCase().includes("rate limit") ||
+          error.message.toLowerCase().includes("too many requests"));
+
+      const errorMessage = error instanceof Error ? `: ${error.message}` : "";
+      const statusInfo = isRateLimited ? " - Rate limit hit (429)" : "";
+
+      console.warn(`Request failed. Retrying in ${delayTime} ms...`);
+      onProgress?.(`Retrying in 1m 1s${statusInfo}${errorMessage}`);
+
+      await delayWithSignal(delayTime, signal);
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      delayTime *= 2;
       retries--;
+      attempt++;
     }
   }
 }
@@ -353,6 +369,13 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
 ): Promise<number[]> {
   let page = 1;
   const allIds: number[] = [];
+  const relationType = relation === "followers" ? "followers" : "following";
+  const processedPages = new Set<number>();
+
+  if (onProgress) {
+    onProgress(`Starting to fetch ${relationType} for user ${userId}...`);
+  }
+
   while (true) {
     const query = `
       query ($userId: Int!, $page: Int, $perPage: Int) {
@@ -371,40 +394,84 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
     let retryCount = 0;
     const maxRetries = 5;
     let data: GraphQLResult<RelationResult<T>>;
-    while (true) {
-      try {
-        data = await apiRequest<RelationResult<T>>(
-          query,
-          { userId, page, perPage },
-          signal,
-          onProgress,
-        );
-        break;
-      } catch (err) {
-        retryCount++;
-        if (retryCount >= maxRetries) {
-          throw err;
+
+    if (!processedPages.has(page)) {
+      while (true) {
+        try {
+          data = await apiRequest<RelationResult<T>>(
+            query,
+            { userId, page, perPage },
+            signal,
+            (message) => {
+              if (onProgress) {
+                if (message.includes("Retrying")) {
+                  const standardizedMessage = message.replace(
+                    /Retrying in [\d.]+[ms]+/i,
+                    "Retrying in 1m 1s",
+                  );
+                  onProgress(
+                    `${relationType.toUpperCase()}: ${standardizedMessage}`,
+                  );
+                }
+              }
+            },
+          );
+
+          // Mark this page as processed to avoid duplicates
+          processedPages.add(page);
+          break;
+        } catch (err) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            if (onProgress) {
+              onProgress(
+                `Failed to fetch ${relationType} after ${maxRetries} retries`,
+              );
+            }
+            throw err;
+          }
+          if (onProgress) {
+            onProgress(
+              `Retry ${retryCount}/${maxRetries} for ${relationType} - waiting 1m 1s...`,
+            );
+          }
+          await delayWithSignal(61000, signal);
         }
-        await delayWithSignal(61000, signal);
       }
+
+      const pageData = data.data.Page;
+      let ids: number[];
+      if (relation === "followers") {
+        const followersPage = pageData as GetFollowersPageData["Page"];
+        ids = followersPage.followers.map((item: { id: number }) => item.id);
+      } else {
+        const followingPage = pageData as GetFollowingPageData["Page"];
+        ids = followingPage.following.map((item: { id: number }) => item.id);
+      }
+
+      // Only add unique IDs
+      for (const id of ids) {
+        if (!allIds.includes(id)) {
+          allIds.push(id);
+        }
+      }
+
+      if (onProgress) {
+        onProgress(
+          `User ${userId}: Fetched page ${page} with ${ids.length} ${relationType}`,
+        );
+      }
+
+      if (!pageData.pageInfo.hasNextPage) {
+        if (onProgress) {
+          onProgress(
+            `Completed fetching all ${allIds.length} ${relationType} for user ${userId}`,
+          );
+        }
+        break;
+      }
+      page++;
     }
-    const pageData = data.data.Page;
-    let ids: number[];
-    if (relation === "followers") {
-      const followersPage = pageData as GetFollowersPageData["Page"];
-      ids = followersPage.followers.map((item: { id: number }) => item.id);
-    } else {
-      const followingPage = pageData as GetFollowingPageData["Page"];
-      ids = followingPage.following.map((item: { id: number }) => item.id);
-    }
-    allIds.push(...ids);
-    if (onProgress) {
-      onProgress(`User ${userId}: Fetched page ${page} with ${ids.length} IDs`);
-    }
-    if (!pageData.pageInfo.hasNextPage) {
-      break;
-    }
-    page++;
   }
   return allIds;
 }
@@ -418,21 +485,53 @@ export async function getMultipleUserRelations(
 ): Promise<Record<number, number> | Record<number, number[]>> {
   if (userIds.length === 0) return {};
 
+  // Track which user relations we've already requested to prevent duplicates
+  const processedRelations = new Set<string>();
+
   if (options?.returnIds) {
     // Fetch all pages per userID using the helper function
     const result: Record<number, number[]> = {};
+
     for (const userId of userIds) {
-      result[userId] = await fetchAllUserRelationIds(
-        userId,
-        relation,
-        signal,
-        onProgress,
-        options.perPage ?? 50,
-      );
+      const relationKey = `${relation}-${userId}`;
+
+      // Skip if we've already processed this relation
+      if (processedRelations.has(relationKey)) {
+        if (onProgress) {
+          onProgress(
+            `Skipping duplicate request for ${relation} of user ${userId}`,
+          );
+        }
+        continue;
+      }
+
+      processedRelations.add(relationKey);
+
+      try {
+        result[userId] = await fetchAllUserRelationIds(
+          userId,
+          relation,
+          signal,
+          onProgress,
+          options.perPage ?? 50,
+        );
+      } catch (error) {
+        // If there's an error, log it but continue with other users
+        if (onProgress) {
+          onProgress(
+            `Error fetching ${relation} for user ${userId}: ${error instanceof Error ? error.message : "Unknown error"}`,
+          );
+        }
+        result[userId] = [];
+      }
     }
     return result;
   } else {
     // Count mode: use a single alias query with perPage=1
+    if (onProgress) {
+      onProgress(`Fetching ${relation} counts for ${userIds.length} users...`);
+    }
+
     const perPageValue = 1;
     const queryParts = userIds
       .map((userId) => {
@@ -452,12 +551,28 @@ export async function getMultipleUserRelations(
         ${queryParts}
       }
     `;
-    const data = await apiRequest<GetMultipleFollowerCountsData>(
-      query,
-      {},
-      signal,
-      onProgress,
-    );
+
+    let data: GraphQLResult<GetMultipleFollowerCountsData>;
+    try {
+      data = await apiRequest<GetMultipleFollowerCountsData>(
+        query,
+        {},
+        signal,
+        onProgress,
+      );
+    } catch (error) {
+      if (onProgress) {
+        onProgress(
+          `Error fetching ${relation} counts: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      }
+      // Return empty counts on error
+      const result: Record<number, number> = {};
+      userIds.forEach((id) => {
+        result[id] = 0;
+      });
+      return result;
+    }
 
     const result: Record<number, number> = {};
     userIds.forEach((userId) => {
@@ -465,6 +580,13 @@ export async function getMultipleUserRelations(
       result[userId] =
         pageData && pageData.pageInfo ? pageData.pageInfo.total : 0;
     });
+
+    if (onProgress) {
+      onProgress(
+        `Completed fetching ${relation} counts for ${userIds.length} users`,
+      );
+    }
+
     return result;
   }
 }
