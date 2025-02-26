@@ -34,11 +34,15 @@ jobs:
       - name: Check for package updates
         run: |
           npm install -g npm-check-updates
+          # Create temporary file for ncu output
+          NCU_OUTPUT=$(ncu)
+          
+          # Use echo to write to GITHUB_STEP_SUMMARY
           echo "## 📦 Package Updates Available" >> $GITHUB_STEP_SUMMARY
           echo "The following packages can be updated:" >> $GITHUB_STEP_SUMMARY
-          echo "```" >> $GITHUB_STEP_SUMMARY
-          ncu >> $GITHUB_STEP_SUMMARY
-          echo "```" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$NCU_OUTPUT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           echo "To update packages, you can:" >> $GITHUB_STEP_SUMMARY
           echo "1. Run manually: npm run update" >> $GITHUB_STEP_SUMMARY
           echo "2. Use the 'Check for Package Updates' workflow with the 'update-packages' option enabled" >> $GITHUB_STEP_SUMMARY

@@ -29,19 +29,25 @@ jobs:
       - name: Check for package updates
         id: check-updates
         run: |
+          # Capture ncu output
+          NCU_OUTPUT=$(ncu)
+          
+          # Use echo to write to GITHUB_STEP_SUMMARY
           echo "## 📦 Package Updates Available" >> $GITHUB_STEP_SUMMARY
           echo "The following packages can be updated:" >> $GITHUB_STEP_SUMMARY
-          echo "```" >> $GITHUB_STEP_SUMMARY
-          ncu >> $GITHUB_STEP_SUMMARY
-          echo "```" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$NCU_OUTPUT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           echo "To update all packages, run: npm run update" >> $GITHUB_STEP_SUMMARY
-
-          # Save update info to output
+          
+          # Capture JSON output for PR creation
           UPDATE_INFO=$(ncu --jsonUpgraded)
-          echo "update_info=${UPDATE_INFO}" >> $GITHUB_OUTPUT
-
+          echo "update_info<<EOF" >> $GITHUB_OUTPUT
+          echo "$UPDATE_INFO" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
           # Check if there are updates
-          if [ "$(ncu --jsonUpgraded | jq 'length')" -gt 0 ]; then
+          if [ "$(echo "$UPDATE_INFO" | jq 'length')" -gt 0 ]; then
             echo "has_updates=true" >> $GITHUB_OUTPUT
           else
             echo "has_updates=false" >> $GITHUB_OUTPUT
@@ -63,13 +69,13 @@ jobs:
           title: "chore: update npm dependencies"
           body: |
             This PR updates npm dependencies to their latest versions.
-
+            
             Updated by GitHub Actions.
-
+            
             <details>
             <summary>Package Updates</summary>
-
-            ```
+            
+            ```json
             ${{ steps.check-updates.outputs.update_info }}
             ```
             </details>
