@@ -1,10 +1,55 @@
+/**
+ * AniList API Integration Module
+ *
+ * This module provides a comprehensive set of functions for interacting with the AniList GraphQL API.
+ * It handles authentication, API requests, rate limiting, error handling, and data processing.
+ *
+ * Key features:
+ * - Smart retrying with rate limit awareness
+ * - Support for abort signals to cancel in-flight requests
+ * - Progress reporting for long-running operations
+ * - Type-safe GraphQL responses
+ */
+
 export const API_URL = "https://graphql.anilist.co";
 
+import {
+  GET_USER_ID,
+  GET_FOLLOWING,
+  GET_FOLLOWERS,
+  GET_FOLLOWER_COUNT,
+  GET_GLOBAL_ACTIVITIES,
+  GET_USER_FOLLOWERS_PAGE,
+  GET_USER_FOLLOWING_PAGE,
+  TOGGLE_FOLLOW,
+  TOGGLE_FOLLOW_WITH_ID,
+  buildMultipleUserRelationsQuery,
+} from "./anilistQueries";
+
+// -------------------------------------------------------------------------
+// Types and Interfaces
+// -------------------------------------------------------------------------
+
+/**
+ * Standard GraphQL response format with data and optional errors
+ */
 export interface GraphQLResult<T> {
   data: T;
   errors?: { message: string; [key: string]: unknown }[];
 }
 
+// -------------------------------------------------------------------------
+// Utility Functions
+// -------------------------------------------------------------------------
+
+/**
+ * Creates a Promise that resolves after a delay, but can be cancelled via AbortSignal
+ * This is primarily used for rate limiting controls and retries
+ *
+ * @param ms - Time to delay in milliseconds
+ * @param signal - Optional AbortSignal to cancel the delay
+ * @returns Promise that resolves after delay or rejects if aborted
+ */
 export function delayWithSignal(
   ms: number,
   signal?: AbortSignal,
@@ -12,6 +57,7 @@ export function delayWithSignal(
   return new Promise<void>((resolve, reject) => {
     let done = false;
 
+    // Create the timeout that will resolve the promise after the delay
     const timeout = setTimeout(() => {
       done = true;
       cleanup();
@@ -22,6 +68,7 @@ export function delayWithSignal(
       }
     }, ms);
 
+    // Handler for abort events on the signal
     const onAbort = () => {
       if (!done) {
         cleanup();
@@ -29,6 +76,7 @@ export function delayWithSignal(
       }
     };
 
+    // Helper to clean up listeners and timeouts
     const cleanup = () => {
       clearTimeout(timeout);
       if (signal) {
@@ -36,6 +84,7 @@ export function delayWithSignal(
       }
     };
 
+    // Initial check if already aborted
     if (signal) {
       if (signal.aborted) {
         cleanup();
@@ -47,6 +96,25 @@ export function delayWithSignal(
   });
 }
 
+// -------------------------------------------------------------------------
+// Core API Request Function
+// -------------------------------------------------------------------------
+
+/**
+ * Core function to send GraphQL requests to the AniList API
+ *
+ * Features:
+ * - Automatic authentication token handling
+ * - Smart retry mechanism for rate limits (429 errors)
+ * - Support for progress reporting via callback
+ * - AbortSignal support for cancellation
+ *
+ * @param query - GraphQL query or mutation string
+ * @param variables - Variables to pass to the GraphQL operation
+ * @param signal - AbortSignal for cancelling the request
+ * @param onProgress - Callback for reporting progress/status messages
+ * @returns Promise resolving to typed GraphQL response
+ */
 export async function apiRequest<T>(
   query: string,
   variables: Record<string, unknown> = {},
@@ -54,19 +122,22 @@ export async function apiRequest<T>(
   onProgress?: (message: string) => void,
 ): Promise<GraphQLResult<T>> {
   let retries = 3;
-  const delayTime = 61000;
+  const delayTime = 61000; // AniList rate limit window (just over 1 minute)
   let attempt = 1;
 
   while (true) {
+    // Retrieve authentication token from Electron main process
     const token = await Promise.resolve(window.electronAPI.getToken()).then(
       (storedToken: string) => storedToken || "",
     );
 
     try {
+      // Log additional attempts beyond the first
       if (attempt > 1) {
         onProgress?.(`Attempt ${attempt} - Sending request...`);
       }
 
+      // Send the actual API request
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
@@ -78,8 +149,11 @@ export async function apiRequest<T>(
         body: JSON.stringify({ query, variables }),
       });
 
+      // Handle successful API response
       if (response.ok) {
         const result = (await response.json()) as GraphQLResult<T>;
+
+        // GraphQL can return 200 OK but still contain errors
         if (result.errors) {
           const err: Error & { response?: Response } = new Error(
             `GraphQL errors: ${JSON.stringify(result.errors)}`,
@@ -88,20 +162,31 @@ export async function apiRequest<T>(
           throw err;
         }
         return result;
-      } else if (response.status === 429) {
+      }
+      // Handle rate limiting (HTTP 429)
+      else if (response.status === 429) {
         console.warn(`Rate limited. Retrying after 61 seconds...`);
         onProgress?.(`Retrying in 1m 1s - Rate limit hit (429)`);
 
+        // Wait for the rate limit window to expire
         await delayWithSignal(delayTime, signal);
+
+        // If aborted during the delay, throw an abort error
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+        // Decrement retries and increment attempt
         retries--;
         attempt++;
+
+        // Stop if we've exhausted all retries
         if (retries <= 0) {
           const errMsg = "Max retries reached due to rate limiting";
           onProgress?.(errMsg);
           throw new Error(errMsg);
         }
-      } else {
+      }
+      // Handle other HTTP errors
+      else {
         console.error(response);
         const errMsg = `Request failed with status ${response.status}: ${response.statusText}`;
         onProgress?.(errMsg);
@@ -112,64 +197,90 @@ export async function apiRequest<T>(
         throw err;
       }
     } catch (error: unknown) {
+      // Special handling for user-initiated aborts
       if (error instanceof Error && error.name === "AbortError") {
         console.warn("Request aborted by user.");
         onProgress?.("Request aborted by user");
         throw error;
       }
 
+      // Log the error for debugging
       console.error("Fetch failed with error:", error);
       if (error instanceof Error) {
         console.log(error.message);
       }
 
+      // Stop if we've exhausted all retries
       if (retries <= 0) {
         onProgress?.(`Max retries exceeded. Request failed.`);
         throw error;
       }
 
-      // Expanded check for rate limiting in error messages
+      // Check if the error is related to rate limiting
       const isRateLimited =
         error instanceof Error &&
         (error.message.toLowerCase().includes("429") ||
           error.message.toLowerCase().includes("rate limit") ||
           error.message.toLowerCase().includes("too many requests"));
 
+      // Format a user-friendly error message
       const errorMessage = error instanceof Error ? `: ${error.message}` : "";
       const statusInfo = isRateLimited ? " - Rate limit hit (429)" : "";
 
+      // Log retry attempt and wait
       console.warn(`Request failed. Retrying in ${delayTime} ms...`);
       onProgress?.(`Retrying in 1m 1s${statusInfo}${errorMessage}`);
 
+      // Wait before retrying
       await delayWithSignal(delayTime, signal);
+
+      // If aborted during the delay, throw an abort error
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+      // Decrement retries and increment attempt
       retries--;
       attempt++;
     }
   }
 }
 
+// -------------------------------------------------------------------------
+// User Information API Functions
+// -------------------------------------------------------------------------
+
+/**
+ * Data interface for the user ID query response
+ */
 interface GetUserIdData {
   Viewer: {
     id: number;
   };
 }
 
+/**
+ * Gets the currently authenticated user's ID from the AniList API
+ * This is typically the first step in many operations as it identifies the current user
+ *
+ * @param signal - Optional AbortSignal to cancel the request
+ * @param onProgress - Optional callback for progress updates
+ * @returns Promise resolving to the user's numeric ID
+ */
 export async function getUserId(
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
 ): Promise<number> {
-  const query = `
-    query {
-      Viewer {
-        id
-      }
-    }
-  `;
-  const data = await apiRequest<GetUserIdData>(query, {}, signal, onProgress);
+  const data = await apiRequest<GetUserIdData>(
+    GET_USER_ID,
+    {},
+    signal,
+    onProgress,
+  );
   return data.data.Viewer.id;
 }
 
+/**
+ * Data interface for the following page query response
+ */
 interface GetFollowingPageData {
   Page: {
     pageInfo: {
@@ -183,6 +294,15 @@ interface GetFollowingPageData {
   };
 }
 
+/**
+ * Gets all users that a specified user is following
+ * Handles pagination automatically by fetching all pages
+ *
+ * @param userId - ID of the user whose following list to fetch
+ * @param signal - Optional AbortSignal to cancel the request
+ * @param onProgress - Optional callback for progress updates
+ * @returns Promise resolving to an array of user IDs being followed
+ */
 export async function getFollowing(
   userId: number,
   signal?: AbortSignal,
@@ -193,23 +313,10 @@ export async function getFollowing(
   const perPage = 50;
   let hasNextPage = true;
 
+  // Fetch pages until there are no more
   while (hasNextPage) {
-    const query = `
-      query ($userId: Int!, $page: Int, $perPage: Int) {
-        Page(page: $page, perPage: $perPage) {
-          pageInfo {
-            currentPage
-            lastPage
-            hasNextPage
-          }
-          following(userId: $userId) {
-            id
-          }
-        }
-      }
-    `;
     const data = await apiRequest<GetFollowingPageData>(
-      query,
+      GET_FOLLOWING,
       { userId, page, perPage },
       signal,
       onProgress,
@@ -222,42 +329,50 @@ export async function getFollowing(
   return followingIds;
 }
 
+// -------------------------------------------------------------------------
+// Activity Feed API Functions
+// -------------------------------------------------------------------------
+
+/**
+ * Base interface for activity types
+ */
 interface BaseActivity {
   id: number;
   userId: number;
 }
+
+/**
+ * Type alias for global activity feed items
+ */
 type GlobalActivity = BaseActivity;
 
+/**
+ * Data interface for the global activities query response
+ */
 interface GetGlobalActivitiesData {
   Page: {
     activities: GlobalActivity[];
   };
 }
 
+/**
+ * Gets activities from the global AniList feed
+ * Used to find random active users for the random follow feature
+ *
+ * @param page - Page number to fetch
+ * @param perPage - Number of activities per page (default: 50)
+ * @param signal - Optional AbortSignal to cancel the request
+ * @param onProgress - Optional callback for progress updates
+ * @returns Promise resolving to an array of activity objects
+ */
 export async function getGlobalActivities(
   page: number,
   perPage: number = 50,
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
 ): Promise<GlobalActivity[]> {
-  const query = `
-    query ($page: Int, $perPage: Int) {
-      Page(page: $page, perPage: $perPage) {
-        activities(sort: ID_DESC) {
-          ... on TextActivity {
-            id
-            userId
-          }
-          ... on ListActivity {
-            id
-            userId
-          }
-        }
-      }
-    }
-  `;
   const data = await apiRequest<GetGlobalActivitiesData>(
-    query,
+    GET_GLOBAL_ACTIVITIES,
     { page, perPage },
     signal,
     onProgress,
@@ -265,6 +380,13 @@ export async function getGlobalActivities(
   return data.data.Page.activities;
 }
 
+// -------------------------------------------------------------------------
+// Follower Data API Functions
+// -------------------------------------------------------------------------
+
+/**
+ * Data interface for the follower count query response
+ */
 interface GetFollowerCountData {
   User: {
     statistics: {
@@ -273,22 +395,21 @@ interface GetFollowerCountData {
   };
 }
 
+/**
+ * Gets the number of followers for a specified user
+ *
+ * @param userId - ID of the user whose follower count to fetch
+ * @param signal - Optional AbortSignal to cancel the request
+ * @param onProgress - Optional callback for progress updates
+ * @returns Promise resolving to the follower count
+ */
 export async function getFollowerCount(
   userId: number,
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
 ): Promise<number> {
-  const query = `
-    query ($userId: Int!) {
-      User(id: $userId) {
-        statistics {
-          followerCount
-        }
-      }
-    }
-  `;
   const data = await apiRequest<GetFollowerCountData>(
-    query,
+    GET_FOLLOWER_COUNT,
     { userId },
     signal,
     onProgress,
@@ -296,26 +417,35 @@ export async function getFollowerCount(
   return data.data.User.statistics.followerCount;
 }
 
+// -------------------------------------------------------------------------
+// Follow/Unfollow API Functions
+// -------------------------------------------------------------------------
+
+/**
+ * Data interface for the toggle follow mutation response
+ */
 interface ToggleFollowData {
   ToggleFollow: {
     isFollowing: boolean;
   };
 }
 
+/**
+ * Follows a user on AniList
+ * Uses the toggle follow mutation which acts as both follow and unfollow
+ *
+ * @param userId - ID of the user to follow
+ * @param signal - Optional AbortSignal to cancel the request
+ * @param onProgress - Optional callback for progress updates
+ * @returns Promise resolving to a boolean indicating if now following
+ */
 export async function followUser(
   userId: number,
   signal?: AbortSignal,
   onProgress?: (message: string) => void,
 ): Promise<boolean> {
-  const mutation = `
-    mutation ($userId: Int!) {
-      ToggleFollow(userId: $userId) {
-        isFollowing
-      }
-    }
-  `;
   const data = await apiRequest<ToggleFollowData>(
-    mutation,
+    TOGGLE_FOLLOW,
     { userId },
     signal,
     onProgress,
@@ -323,6 +453,13 @@ export async function followUser(
   return data.data.ToggleFollow.isFollowing;
 }
 
+// -------------------------------------------------------------------------
+// Multiple Users Relation Functions
+// -------------------------------------------------------------------------
+
+/**
+ * Interface for paginated follower data
+ */
 interface FollowerPageData {
   pageInfo: {
     total: number;
@@ -330,10 +467,16 @@ interface FollowerPageData {
   followers: { id: number }[];
 }
 
+/**
+ * Data interface for the multiple follower counts query response
+ */
 interface GetMultipleFollowerCountsData {
   [key: string]: FollowerPageData;
 }
 
+/**
+ * Data interface for the followers page query response
+ */
 interface GetFollowersPageData {
   Page: {
     pageInfo: {
@@ -345,6 +488,9 @@ interface GetFollowersPageData {
   };
 }
 
+/**
+ * Data interface for the following page query response
+ */
 interface GetFollowingPageData {
   Page: {
     pageInfo: {
@@ -356,10 +502,24 @@ interface GetFollowingPageData {
   };
 }
 
+/**
+ * Type to handle the different relation result shapes based on relation type
+ */
 type RelationResult<T extends "followers" | "following"> = T extends "followers"
   ? GetFollowersPageData
   : GetFollowingPageData;
 
+/**
+ * Helper function to fetch all relation IDs for a user across all pages
+ * Handles pagination and retries automatically
+ *
+ * @param userId - ID of the user whose relations to fetch
+ * @param relation - Type of relation ("followers" or "following")
+ * @param signal - Optional AbortSignal to cancel the request
+ * @param onProgress - Optional callback for progress updates
+ * @param perPage - Number of relations per page (default: 50)
+ * @returns Promise resolving to an array of user IDs
+ */
 async function fetchAllUserRelationIds<T extends "followers" | "following">(
   userId: number,
   relation: T,
@@ -372,30 +532,25 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
   const relationType = relation === "followers" ? "followers" : "following";
   const processedPages = new Set<number>();
 
+  // Report startup
   if (onProgress) {
     onProgress(`Starting to fetch ${relationType} for user ${userId}...`);
   }
 
+  // Loop until we've fetched all pages
   while (true) {
-    const query = `
-      query ($userId: Int!, $page: Int, $perPage: Int) {
-        Page(page: $page, perPage: $perPage) {
-          pageInfo {
-            currentPage
-            lastPage
-            hasNextPage
-          }
-          ${relation}(userId: $userId) {
-            id
-          }
-        }
-      }
-    `;
+    // Select the appropriate query based on relation type
+    const query =
+      relation === "followers"
+        ? GET_USER_FOLLOWERS_PAGE
+        : GET_USER_FOLLOWING_PAGE;
     let retryCount = 0;
     const maxRetries = 5;
     let data: GraphQLResult<RelationResult<T>>;
 
+    // Skip pages we've already processed (avoids duplicates on retries)
     if (!processedPages.has(page)) {
+      // Retry loop for individual pages
       while (true) {
         try {
           data = await apiRequest<RelationResult<T>>(
@@ -405,6 +560,7 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
             (message) => {
               if (onProgress) {
                 if (message.includes("Retrying")) {
+                  // Standardize retry messages for consistency
                   const standardizedMessage = message.replace(
                     /Retrying in [\d.]+[ms]+/i,
                     "Retrying in 1m 1s",
@@ -421,6 +577,7 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
           processedPages.add(page);
           break;
         } catch (err) {
+          // Handle retry logic with backoff
           retryCount++;
           if (retryCount >= maxRetries) {
             if (onProgress) {
@@ -439,6 +596,7 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
         }
       }
 
+      // Extract the page data and IDs based on relation type
       const pageData = data.data.Page;
       let ids: number[];
       if (relation === "followers") {
@@ -449,19 +607,21 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
         ids = followingPage.following.map((item: { id: number }) => item.id);
       }
 
-      // Only add unique IDs
+      // Only add unique IDs to avoid duplicates
       for (const id of ids) {
         if (!allIds.includes(id)) {
           allIds.push(id);
         }
       }
 
+      // Report progress
       if (onProgress) {
         onProgress(
           `User ${userId}: Fetched page ${page} with ${ids.length} ${relationType}`,
         );
       }
 
+      // Exit loop if we've reached the last page
       if (!pageData.pageInfo.hasNextPage) {
         if (onProgress) {
           onProgress(
@@ -476,6 +636,17 @@ async function fetchAllUserRelationIds<T extends "followers" | "following">(
   return allIds;
 }
 
+/**
+ * Gets relations (followers or following) for multiple users efficiently
+ * Can return either full ID lists or just count information
+ *
+ * @param userIds - Array of user IDs to fetch relations for
+ * @param signal - Optional AbortSignal to cancel the request
+ * @param onProgress - Optional callback for progress updates
+ * @param relation - Type of relation to fetch ("followers" or "following")
+ * @param options - Optional settings (returnIds, perPage)
+ * @returns Promise resolving to a record mapping user IDs to relation data
+ */
 export async function getMultipleUserRelations(
   userIds: number[],
   signal?: AbortSignal,
@@ -488,6 +659,7 @@ export async function getMultipleUserRelations(
   // Track which user relations we've already requested to prevent duplicates
   const processedRelations = new Set<string>();
 
+  // ID mode: fetch all IDs for detailed analysis
   if (options?.returnIds) {
     // Fetch all pages per userID using the helper function
     const result: Record<number, number[]> = {};
@@ -508,6 +680,7 @@ export async function getMultipleUserRelations(
       processedRelations.add(relationKey);
 
       try {
+        // Fetch all relation IDs across all pages
         result[userId] = await fetchAllUserRelationIds(
           userId,
           relation,
@@ -526,34 +699,25 @@ export async function getMultipleUserRelations(
       }
     }
     return result;
-  } else {
-    // Count mode: use a single alias query with perPage=1
+  }
+  // Count mode: only get the total counts, not the individual IDs
+  else {
+    // Report startup
     if (onProgress) {
       onProgress(`Fetching ${relation} counts for ${userIds.length} users...`);
     }
 
+    // Use a single efficiency-optimized query with aliases
     const perPageValue = 1;
-    const queryParts = userIds
-      .map((userId) => {
-        return `${relation}${userId}: Page(perPage: ${perPageValue}) {
-          pageInfo {
-            total
-          }
-          ${relation}(userId: ${userId}) {
-            id
-          }
-        }`;
-      })
-      .join("\n");
-
-    const query = `
-      query {
-        ${queryParts}
-      }
-    `;
+    const query = buildMultipleUserRelationsQuery(
+      userIds,
+      relation,
+      perPageValue,
+    );
 
     let data: GraphQLResult<GetMultipleFollowerCountsData>;
     try {
+      // Execute the combined query
       data = await apiRequest<GetMultipleFollowerCountsData>(
         query,
         {},
@@ -561,6 +725,7 @@ export async function getMultipleUserRelations(
         onProgress,
       );
     } catch (error) {
+      // Handle errors gracefully
       if (onProgress) {
         onProgress(
           `Error fetching ${relation} counts: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -574,6 +739,7 @@ export async function getMultipleUserRelations(
       return result;
     }
 
+    // Extract count data for each user
     const result: Record<number, number> = {};
     userIds.forEach((userId) => {
       const pageData = data.data[`${relation}${userId}`];
@@ -581,6 +747,7 @@ export async function getMultipleUserRelations(
         pageData && pageData.pageInfo ? pageData.pageInfo.total : 0;
     });
 
+    // Report completion
     if (onProgress) {
       onProgress(
         `Completed fetching ${relation} counts for ${userIds.length} users`,
@@ -591,43 +758,48 @@ export async function getMultipleUserRelations(
   }
 }
 
+/**
+ * Data interface for the followers query response
+ */
 interface GetFollowersData {
   Page: {
     followers: { id: number }[];
   };
 }
 
+/**
+ * Gets the followers for a specified user (simplified version, first page only)
+ *
+ * @param userId - ID of the user whose followers to fetch
+ * @param signal - Optional AbortSignal to cancel the request
+ * @returns Promise resolving to an array of follower user IDs
+ */
 export async function getFollowers(
   userId: number,
   signal?: AbortSignal,
 ): Promise<number[]> {
-  const query = `
-    query ($userId: Int!) {
-      Page(page: 1, perPage: 50) {
-        followers(userId: $userId) {
-          id
-        }
-      }
-    }
-  `;
-  const data = await apiRequest<GetFollowersData>(query, { userId }, signal);
+  const data = await apiRequest<GetFollowersData>(
+    GET_FOLLOWERS,
+    { userId },
+    signal,
+  );
   return data.data.Page?.followers.map((f) => f.id);
 }
 
+/**
+ * Unfollows a user on AniList
+ * Uses a specialized toggle follow mutation that returns additional fields
+ *
+ * @param userId - ID of the user to unfollow
+ * @param signal - Optional AbortSignal to cancel the request
+ * @returns Promise resolving to boolean indicating success (true = unfollowed)
+ */
 export async function unfollowUser(
   userId: number,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const query = `
-    mutation ($userId: Int!) {
-      ToggleFollow(userId: $userId) {
-        id
-        isFollowing
-      }
-    }
-  `;
   const response = await apiRequest<ToggleFollowData>(
-    query,
+    TOGGLE_FOLLOW_WITH_ID,
     { userId },
     signal,
   );

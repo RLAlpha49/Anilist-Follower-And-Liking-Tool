@@ -1,41 +1,64 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { followRandomUsers } from "@/api/followRandomUsers";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Copy, Check, X, Info, AlertCircle, Users } from "lucide-react";
+import { followRandomUsers } from "@/api/followRandomUsers";
 import { addUniqueMessage, getMessageType } from "@/utils/messageUtils";
 
+/**
+ * RandomFollowPage - A page component that allows users to follow random AniList users.
+ *
+ * Key features:
+ * - Configurable number of users to follow
+ * - Minimum follower threshold to target more active accounts
+ * - Real-time progress monitoring with activity feed
+ * - Process can be manually stopped at any point
+ * - Displays results with copy functionality
+ */
 export default function RandomFollowPage() {
-  // State for user inputs
+  // -------------------------------------------------------------------------
+  // State Management
+  // -------------------------------------------------------------------------
+  // User input configuration
   const [totalPeople, setTotalPeople] = useState<number>(5);
   const [threshold, setThreshold] = useState<number>(1000);
-  // State for loading, error and results
+
+  // Operation state tracking
   const [loading, setLoading] = useState(false);
   const [followed, setFollowed] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
-  // State for progress updates
+
+  // Progress tracking and display
   const [progress, setProgress] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
-  // Track if we're currently rate limited to avoid duplicate messages
+
+  // Message handling state to prevent duplicates and rate limits
   const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
-  // Track recent messages to avoid duplicates
   const [recentMessages, setRecentMessages] = useState<string[]>([]);
 
   // Ref to hold the AbortController for cancelling the follow process
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Add scroll handler
+  // -------------------------------------------------------------------------
+  // Auto-scroll for activity feed - keeps the most recent messages visible
+  // -------------------------------------------------------------------------
   useEffect(() => {
+    // Automatically scroll to bottom when new messages are added
     if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [progress, autoScroll]);
 
-  // Add scroll position detection
+  /**
+   * Handles scroll events on the activity feed to detect when user manually scrolls
+   * This prevents auto-scrolling when the user is looking at previous messages
+   *
+   * @param e - The scroll event
+   */
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const element = e.currentTarget;
     const atBottom =
@@ -43,84 +66,147 @@ export default function RandomFollowPage() {
     setAutoScroll(atBottom);
   };
 
-  // Helper function that wraps the global addUniqueMessage function with component state
+  /**
+   * Helper function that wraps the global addUniqueMessage function with component state.
+   * Handles special cases like rate limits and ensures emoji indicators are added consistently.
+   *
+   * @param message - The message to add to the activity feed
+   */
   const addMessage = (message: string) => {
+    // Handle rate limit messages specially to avoid duplicates
+    // and to schedule a completion message when the rate limit is over
+    if (message.includes("RATE LIMITED") && !isRateLimited) {
+      setIsRateLimited(true);
+
+      // Schedule a message for when the rate limit is over (typically 61 seconds)
+      setTimeout(() => {
+        setIsRateLimited(false);
+        addUniqueMessage(
+          `✅ Rate limit wait completed (1m 1s)`,
+          recentMessages,
+          setRecentMessages,
+          setProgress,
+        );
+      }, 61000);
+    } else if (message.includes("Retrying") && !isRateLimited) {
+      // Convert generic retry messages to our standardized format
+      setIsRateLimited(true);
+      const standardizedMsg = message.replace(
+        /Retrying in [\d.]+[ms]+/i,
+        "Retrying in 1m 1s",
+      );
+
+      // Add emoji indicator for rate limit
+      message = `⚠️ RATE LIMITED: ${standardizedMsg}`;
+
+      // Schedule a rate limit completion message
+      setTimeout(() => {
+        setIsRateLimited(false);
+        addUniqueMessage(
+          `✅ Rate limit wait completed (1m 1s)`,
+          recentMessages,
+          setRecentMessages,
+          setProgress,
+        );
+      }, 61000);
+    } else if (message.includes("Retrying") && isRateLimited) {
+      // Skip duplicate rate limit messages to avoid spamming the activity feed
+      return;
+    }
+
+    // Add emoji indicators based on message content if not already present
+    // This enhances readability by giving visual cues about message types
+    if (!message.match(/^[^\w\s]/)) {
+      // Check if message doesn't start with an emoji
+      if (
+        message.includes("Successfully followed") ||
+        message.includes("success")
+      ) {
+        message = `✅ ${message}`;
+      } else if (message.includes("Failed") || message.includes("Error")) {
+        message = `❌ ${message}`;
+      } else if (message.includes("Skipping")) {
+        message = `⏭️ ${message}`;
+      } else if (message.includes("Attempting to follow")) {
+        message = `🔄 ${message}`;
+      } else if (
+        message.includes("Fetching") ||
+        message.includes("Processing")
+      ) {
+        message = `🔍 ${message}`;
+      } else if (
+        message.includes("Initializing") ||
+        message.includes("Starting")
+      ) {
+        message = `🚀 ${message}`;
+      } else if (
+        message.includes("Completed") ||
+        message.includes("Reached target")
+      ) {
+        message = `🏁 ${message}`;
+      } else if (message.includes("aborted")) {
+        message = `🛑 ${message}`;
+      }
+    }
+
+    // Add the message to the activity feed using the global utility
     addUniqueMessage(message, recentMessages, setRecentMessages, setProgress);
   };
 
+  /**
+   * Main function to handle the follow process
+   * Invokes the followRandomUsers API function with the user's configuration
+   */
   async function handleFollow() {
     setLoading(true);
     setError(null);
     setProgress([]); // Clear previous progress messages
     setRecentMessages([]); // Clear recent messages tracking
     setIsRateLimited(false); // Reset rate limited state
+
+    // Create a new AbortController for this operation
+    // This allows the process to be cancelled by the user
     abortControllerRef.current = new AbortController();
 
     try {
+      // Call the API function to follow random users
+      // This will handle finding and following users based on the criteria
       const followedIds = await followRandomUsers(totalPeople, threshold, {
         signal: abortControllerRef.current.signal,
-        onProgress: (msg: string) => {
-          // Format and improve messages before adding them
-          let formattedMsg = msg;
-
-          // Add emoji indicators based on message content
-          if (msg.includes("Successfully followed")) {
-            formattedMsg = `✅ ${msg}`;
-          } else if (msg.includes("Failed") || msg.includes("Error")) {
-            formattedMsg = `❌ ${msg}`;
-          } else if (msg.includes("Skipping")) {
-            formattedMsg = `⏭️ ${msg}`;
-          } else if (msg.includes("Attempting to follow")) {
-            formattedMsg = `🔄 ${msg}`;
-          } else if (msg.includes("Fetching") || msg.includes("Processing")) {
-            formattedMsg = `🔍 ${msg}`;
-          } else if (msg.includes("Initializing") || msg.includes("Starting")) {
-            formattedMsg = `🚀 ${msg}`;
-          } else if (
-            msg.includes("Completed") ||
-            msg.includes("Reached target")
-          ) {
-            formattedMsg = `🏁 ${msg}`;
-          } else if (msg.includes("aborted")) {
-            formattedMsg = `🛑 ${msg}`;
-          }
-
-          // Handle rate limiting messages
-          if (msg.includes("Retrying") && !isRateLimited) {
-            setIsRateLimited(true);
-            const timeDisplayed = "1m 1s";
-            const standardizedMsg = msg.replace(
-              /Retrying in [\d.]+[ms]+/i,
-              "Retrying in 1m 1s",
-            );
-            formattedMsg = `⚠️ RATE LIMITED: ${standardizedMsg}`;
-
-            // Schedule rate limit completion message
-            setTimeout(() => {
-              setIsRateLimited(false);
-              addMessage(`✅ Rate limit wait completed (${timeDisplayed})`);
-            }, 61000);
-          } else if (msg.includes("Retrying") && isRateLimited) {
-            // Skip duplicate rate limit messages
-            return;
-          }
-
-          addMessage(formattedMsg);
-        },
+        onProgress: addMessage,
       });
+
+      // Store the results for display
       setFollowed(followedIds);
+      addMessage("✅ Process completed! Check your AniList following list.");
     } catch (err) {
-      setError((err as Error).message);
-      addMessage(`❌ ERROR: ${(err as Error).message}`);
+      // Handle errors, distinguishing between user cancellation and actual errors
+      if (err instanceof Error && err.name !== "AbortError") {
+        setError(err.message);
+        addMessage(`❌ ERROR: ${err.message}`);
+      } else if (err instanceof Error && err.name === "AbortError") {
+        addMessage("🛑 Process was manually stopped by user.");
+      }
+    } finally {
+      // Clean up state regardless of success, failure, or cancellation
+      setLoading(false);
+      setIsRateLimited(false);
     }
-    setLoading(false);
   }
 
-  // Copy to clipboard functionality
+  /**
+   * Copies user IDs to clipboard and shows a confirmation message
+   *
+   * @param text - The text (user IDs) to copy to clipboard
+   */
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+    addMessage(`📋 Copied user IDs to clipboard`);
   };
 
+  // -------------------------------------------------------------------------
+  // Component Rendering
+  // -------------------------------------------------------------------------
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mx-auto w-full max-w-4xl space-y-6">
@@ -134,7 +220,7 @@ export default function RandomFollowPage() {
           </p>
         </div>
 
-        {/* Control Panel */}
+        {/* Control Panel - User configuration and action buttons */}
         <Card className="p-6">
           <form
             onSubmit={(e) => {
@@ -143,6 +229,7 @@ export default function RandomFollowPage() {
             }}
           >
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {/* Input for number of users to follow */}
               <div className="space-y-2">
                 <Label
                   htmlFor="totalPeople"
@@ -161,6 +248,7 @@ export default function RandomFollowPage() {
                 />
               </div>
 
+              {/* Input for minimum follower threshold */}
               <div className="space-y-2">
                 <Label htmlFor="threshold" className="flex items-center gap-2">
                   <AlertCircle className="h-4 w-4" />
@@ -178,6 +266,7 @@ export default function RandomFollowPage() {
             </div>
 
             <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              {/* Start Following Button - Primary action */}
               <Button
                 type="submit"
                 variant="default"
@@ -198,6 +287,7 @@ export default function RandomFollowPage() {
                 )}
               </Button>
 
+              {/* Stop Process Button - Only shown when following is in progress */}
               {loading && (
                 <Button
                   variant="destructive"
@@ -216,9 +306,9 @@ export default function RandomFollowPage() {
           </form>
         </Card>
 
-        {/* Progress & Results */}
+        {/* Progress & Results Section - Two-column layout */}
         <div className="grid gap-6 md:grid-cols-2">
-          {/* Progress Feed */}
+          {/* Left Column - Progress Feed */}
           <Card className="h-96">
             <div className="flex items-center justify-between border-b p-4">
               <h2 className="flex items-center gap-2 pr-4 text-xl font-semibold">
@@ -235,6 +325,7 @@ export default function RandomFollowPage() {
               onScroll={handleScroll}
             >
               <div className="space-y-2">
+                {/* Map through progress messages with color coding by type */}
                 {progress.map((msg, index) => (
                   <div
                     key={index}
@@ -261,7 +352,7 @@ export default function RandomFollowPage() {
             </ScrollArea>
           </Card>
 
-          {/* Followed Users */}
+          {/* Right Column - Followed Users List */}
           <Card className="h-96">
             <div className="flex items-center justify-between border-b p-4">
               <h2 className="flex items-center gap-2 pr-4 text-xl font-semibold">
@@ -276,6 +367,7 @@ export default function RandomFollowPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => copyToClipboard(followed.join(", "))}
+                  disabled={followed.length === 0}
                 >
                   <Copy className="h-4 w-4" />
                 </Button>
@@ -283,6 +375,7 @@ export default function RandomFollowPage() {
             </div>
             <ScrollArea className="h-80 p-4">
               {followed.length > 0 ? (
+                // Grid of successfully followed users with copy functionality
                 <div className="grid grid-cols-2 gap-3">
                   {followed.map((id) => (
                     <div
@@ -301,6 +394,7 @@ export default function RandomFollowPage() {
                   ))}
                 </div>
               ) : (
+                // Empty state message
                 <div className="text-muted-foreground flex h-full items-center justify-center">
                   No followed users yet
                 </div>
@@ -309,7 +403,7 @@ export default function RandomFollowPage() {
           </Card>
         </div>
 
-        {/* Error Display */}
+        {/* Error Display Section - Only shown when there's an error */}
         {error && (
           <Card className="border-destructive bg-destructive/10">
             <div className="flex items-center gap-3 p-4">
