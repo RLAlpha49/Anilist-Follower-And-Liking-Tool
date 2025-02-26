@@ -64,7 +64,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          PR_EXISTS=$(gh pr list --json number,title,headRefName --jq '.[] | select(.title == "chore: update npm dependencies" and .headRefName | startswith("deps/update-packages")) | .number')
+          PR_EXISTS=$(gh pr list --json number,title,headRefName --jq '.[] | select(.title == "chore: update npm dependencies" and (.headRefName | startswith("deps/update-packages"))) | .number')
           if [ -n "$PR_EXISTS" ]; then
             echo "Found existing PR #$PR_EXISTS"
             echo "pr_exists=true" >> $GITHUB_OUTPUT
