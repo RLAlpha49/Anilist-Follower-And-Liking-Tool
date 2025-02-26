@@ -8,7 +8,8 @@ on:
     - cron: "0 0 * * 3"
 
 jobs:
-  lint-and-format:
+  lint:
+    name: Lint Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,83 +20,16 @@ jobs:
         run: npm ci
       - name: Check linting
         run: npm run lint
-      - name: Check formatting
-        run: npm run format
 
-  package-updates:
+  format:
+    name: Format Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Install dependencies
         run: npm ci
-      - name: Install npm-check-updates and tools
-        run: |
-          npm install -g npm-check-updates
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: Check for package updates
-        id: check-updates
-        run: |
-          # Capture ncu output
-          NCU_OUTPUT=$(ncu)
-
-          # Use echo to write to GITHUB_STEP_SUMMARY
-          echo "## 📦 Package Updates Available" >> $GITHUB_STEP_SUMMARY
-          echo "The following packages can be updated:" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "$NCU_OUTPUT" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "To update packages, you can:" >> $GITHUB_STEP_SUMMARY
-          echo "1. Run manually: npm run update" >> $GITHUB_STEP_SUMMARY
-          echo "2. Use the 'Check for Package Updates' workflow with the 'update-packages' option enabled" >> $GITHUB_STEP_SUMMARY
-
-          # Capture JSON output for PR creation
-          UPDATE_INFO=$(ncu --jsonUpgraded)
-          echo "update_info<<EOF" >> $GITHUB_OUTPUT
-          echo "$UPDATE_INFO" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          # Check if there are updates
-          if [ "$(echo "$UPDATE_INFO" | jq 'length')" -gt 0 ]; then
-            echo "has_updates=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_updates=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Update packages
-        if: ${{ steps.check-updates.outputs.has_updates == 'true' }}
-        run: |
-          # Update packages and install
-          ncu -u
-          npm install
-
-      - name: Create Pull Request
-        if: ${{ steps.check-updates.outputs.has_updates == 'true' }}
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update npm dependencies"
-          title: "chore: update npm dependencies"
-          body: |
-            This PR updates npm dependencies to their latest versions.
-
-            Updated automatically by GitHub Actions after detecting available updates.
-
-            <details>
-            <summary>Package Updates</summary>
-
-            ```json
-            ${{ steps.check-updates.outputs.update_info }}
-            ```
-            </details>
-          branch: deps/update-packages
-          branch-suffix: timestamp
-          delete-branch: true
-          base: electron-app
+      - name: Check formatting
+        run: npm run format
