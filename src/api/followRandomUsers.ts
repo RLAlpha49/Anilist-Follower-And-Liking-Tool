@@ -48,15 +48,18 @@ export async function followRandomUsers(
   const currentUserId = await apiCallWithProgress(() =>
     getUserId(signal, onProgress),
   );
-  onProgress?.(`Current user id: ${currentUserId}`);
+  onProgress?.(`Current user ID: ${currentUserId}`);
 
   onProgress?.("Fetching current following list...");
   const following = await apiCallWithProgress(() =>
     getFollowing(currentUserId, signal, onProgress),
   );
-  onProgress?.(`Currently following ${following.length} users.`);
+  onProgress?.(`Currently following ${following.length} users`);
 
   const unfollowedIds: Set<number> = loadUnfollowedIds();
+  onProgress?.(
+    `Loaded ${unfollowedIds.size} previously unfollowed users to exclude`,
+  );
 
   try {
     while (peopleProcessed < totalPeopleToFollow) {
@@ -65,15 +68,13 @@ export async function followRandomUsers(
         break;
       }
 
-      onProgress?.(`Processing page ${page}...`);
+      onProgress?.(`Processing global activity page ${page}...`);
       await delayWithSignal(1000, signal);
 
       const activities = await apiCallWithProgress(() =>
         getGlobalActivities(page, 50, signal, onProgress),
       );
-      onProgress?.(
-        `Fetched ${activities.length} activities from page ${page}.`,
-      );
+      onProgress?.(`Fetched ${activities.length} activities from page ${page}`);
 
       const candidateUserIds = new Set<number>();
       for (const activity of activities) {
@@ -86,14 +87,23 @@ export async function followRandomUsers(
       }
 
       onProgress?.(
-        `Found ${candidateUserIds.size} candidate users on page ${page}.`,
+        `Found ${candidateUserIds.size} potential users to follow on page ${page}`,
       );
       if (candidateUserIds.size === 0) {
-        onProgress?.("No more candidate users found. Ending process.");
-        break;
+        onProgress?.("No more candidate users found. Moving to next page...");
+        page++;
+
+        // Safety check to avoid infinite loops
+        if (page > 10) {
+          onProgress?.("Reached maximum page limit (100). Ending process.");
+          break;
+        }
+
+        continue;
       }
 
       const candidateUserIdsArray = Array.from(candidateUserIds);
+
       const followerCounts = await apiCallWithProgress(() =>
         getMultipleUserRelations(
           candidateUserIdsArray,
@@ -105,6 +115,10 @@ export async function followRandomUsers(
       );
 
       let peopleFollowedThisPage = 0;
+      onProgress?.(
+        `Evaluating ${candidateUserIdsArray.length} users against follower threshold (${followerThreshold}+)...`,
+      );
+
       for (const userId of candidateUserIdsArray) {
         if (signal?.aborted) {
           onProgress?.(
@@ -129,34 +143,48 @@ export async function followRandomUsers(
             following.push(userId);
             peopleProcessed++;
             peopleFollowedThisPage++;
-            onProgress?.(`Successfully followed user ${userId}.`);
+            onProgress?.(
+              `Successfully followed user ${userId} (${peopleProcessed}/${totalPeopleToFollow})`,
+            );
             if (peopleProcessed >= totalPeopleToFollow) {
-              onProgress?.("Reached target number of users to follow.");
+              onProgress?.(
+                `Reached target of ${totalPeopleToFollow} users followed. Finishing process.`,
+              );
               break;
             }
           } else {
-            onProgress?.(`Failed to follow user ${userId}.`);
+            onProgress?.(
+              `Failed to follow user ${userId} - API returned unsuccessful status`,
+            );
           }
         } else {
           onProgress?.(
-            `Skipping user ${userId} due to low follower count (${followerCount}).`,
+            `Skipping user ${userId} (Follower Count: ${followerCount} < Threshold: ${followerThreshold})`,
           );
         }
       }
 
-      onProgress?.(`Page ${page}: Followed ${peopleFollowedThisPage} users.`);
+      onProgress?.(
+        `Page ${page} complete: Followed ${peopleFollowedThisPage} users`,
+      );
       page++;
+
+      // Small delay between pages
+      await delayWithSignal(500, signal);
     }
   } catch (error: unknown) {
     if (error instanceof Error && error.name === "AbortError") {
       onProgress?.("Operation aborted by user (caught exception).");
       return followedUserIds;
     }
+    onProgress?.(
+      `Error during follow process: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
     throw error;
   }
 
   onProgress?.(
-    `Follow process completed. Total followed: ${followedUserIds.length}.`,
+    `Follow process completed. Total users followed: ${followedUserIds.length}/${totalPeopleToFollow}`,
   );
   return followedUserIds;
 }

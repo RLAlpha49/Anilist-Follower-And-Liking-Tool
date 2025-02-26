@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Copy, Check, X, Info, AlertCircle, Users } from "lucide-react";
+import { addUniqueMessage, getMessageType } from "@/utils/messageUtils";
 
 export default function RandomFollowPage() {
   // State for user inputs
@@ -19,6 +20,10 @@ export default function RandomFollowPage() {
   const [progress, setProgress] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  // Track if we're currently rate limited to avoid duplicate messages
+  const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+  // Track recent messages to avoid duplicates
+  const [recentMessages, setRecentMessages] = useState<string[]>([]);
 
   // Ref to hold the AbortController for cancelling the follow process
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -38,21 +43,75 @@ export default function RandomFollowPage() {
     setAutoScroll(atBottom);
   };
 
+  // Helper function that wraps the global addUniqueMessage function with component state
+  const addMessage = (message: string) => {
+    addUniqueMessage(message, recentMessages, setRecentMessages, setProgress);
+  };
+
   async function handleFollow() {
     setLoading(true);
     setError(null);
     setProgress([]); // Clear previous progress messages
+    setRecentMessages([]); // Clear recent messages tracking
+    setIsRateLimited(false); // Reset rate limited state
     abortControllerRef.current = new AbortController();
+
     try {
       const followedIds = await followRandomUsers(totalPeople, threshold, {
         signal: abortControllerRef.current.signal,
         onProgress: (msg: string) => {
-          setProgress((prev) => [...prev, msg]);
+          // Format and improve messages before adding them
+          let formattedMsg = msg;
+
+          // Add emoji indicators based on message content
+          if (msg.includes("Successfully followed")) {
+            formattedMsg = `✅ ${msg}`;
+          } else if (msg.includes("Failed") || msg.includes("Error")) {
+            formattedMsg = `❌ ${msg}`;
+          } else if (msg.includes("Skipping")) {
+            formattedMsg = `⏭️ ${msg}`;
+          } else if (msg.includes("Attempting to follow")) {
+            formattedMsg = `🔄 ${msg}`;
+          } else if (msg.includes("Fetching") || msg.includes("Processing")) {
+            formattedMsg = `🔍 ${msg}`;
+          } else if (msg.includes("Initializing") || msg.includes("Starting")) {
+            formattedMsg = `🚀 ${msg}`;
+          } else if (
+            msg.includes("Completed") ||
+            msg.includes("Reached target")
+          ) {
+            formattedMsg = `🏁 ${msg}`;
+          } else if (msg.includes("aborted")) {
+            formattedMsg = `🛑 ${msg}`;
+          }
+
+          // Handle rate limiting messages
+          if (msg.includes("Retrying") && !isRateLimited) {
+            setIsRateLimited(true);
+            const timeDisplayed = "1m 1s";
+            const standardizedMsg = msg.replace(
+              /Retrying in [\d.]+[ms]+/i,
+              "Retrying in 1m 1s",
+            );
+            formattedMsg = `⚠️ RATE LIMITED: ${standardizedMsg}`;
+
+            // Schedule rate limit completion message
+            setTimeout(() => {
+              setIsRateLimited(false);
+              addMessage(`✅ Rate limit wait completed (${timeDisplayed})`);
+            }, 61000);
+          } else if (msg.includes("Retrying") && isRateLimited) {
+            // Skip duplicate rate limit messages
+            return;
+          }
+
+          addMessage(formattedMsg);
         },
       });
       setFollowed(followedIds);
     } catch (err) {
       setError((err as Error).message);
+      addMessage(`❌ ERROR: ${(err as Error).message}`);
     }
     setLoading(false);
   }
@@ -60,20 +119,6 @@ export default function RandomFollowPage() {
   // Copy to clipboard functionality
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-  };
-
-  // Parse progress messages for styling
-  const getMessageType = (message: string) => {
-    if (message.includes("Successfully")) return "success";
-    if (
-      message.includes("Failed") ||
-      message.includes("Error") ||
-      message.includes("aborted")
-    )
-      return "error";
-    if (message.includes("Skipping") || message.includes("Retrying"))
-      return "warning";
-    return "info";
   };
 
   return (
@@ -157,7 +202,10 @@ export default function RandomFollowPage() {
                 <Button
                   variant="destructive"
                   size="lg"
-                  onClick={() => abortControllerRef.current?.abort()}
+                  onClick={() => {
+                    abortControllerRef.current?.abort();
+                    addMessage("🛑 Process manually stopped by user");
+                  }}
                   className="w-full sm:w-auto"
                 >
                   <X className="mr-2 h-5 w-5" />
@@ -186,32 +234,27 @@ export default function RandomFollowPage() {
               className="h-80 p-4"
               onScroll={handleScroll}
             >
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {progress.map((msg, index) => (
                   <div
                     key={index}
-                    className={`flex items-start gap-3 rounded-lg p-3 ${
+                    className={`rounded-lg p-3 ${
                       getMessageType(msg) === "success"
                         ? "bg-green-100/50 dark:bg-green-900/20"
                         : getMessageType(msg) === "error"
                           ? "bg-red-100/50 dark:bg-red-900/20"
                           : getMessageType(msg) === "warning"
                             ? "bg-yellow-100/50 dark:bg-yellow-900/20"
-                            : "bg-blue-100/50 dark:bg-blue-900/20"
+                            : getMessageType(msg) === "skipped"
+                              ? "bg-gray-100/50 dark:bg-gray-800/30"
+                              : getMessageType(msg) === "processing"
+                                ? "bg-purple-100/50 dark:bg-purple-900/20"
+                                : getMessageType(msg) === "complete"
+                                  ? "bg-green-100/50 dark:bg-green-900/20"
+                                  : "bg-blue-100/50 dark:bg-blue-900/20"
                     }`}
                   >
-                    <span className="mt-1">
-                      {getMessageType(msg) === "success" ? (
-                        <Check className="h-4 w-4 text-green-600" />
-                      ) : getMessageType(msg) === "error" ? (
-                        <X className="h-4 w-4 text-red-600" />
-                      ) : getMessageType(msg) === "warning" ? (
-                        <AlertCircle className="h-4 w-4 text-yellow-600" />
-                      ) : (
-                        <Info className="h-4 w-4 text-blue-600" />
-                      )}
-                    </span>
-                    <span className="flex-1">{msg}</span>
+                    {msg}
                   </div>
                 ))}
               </div>

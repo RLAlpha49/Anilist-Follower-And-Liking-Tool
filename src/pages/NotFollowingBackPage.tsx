@@ -14,6 +14,7 @@ import {
   loadUnfollowedIds,
   saveUnfollowedIds,
 } from "@/api/config";
+import { addUniqueMessage, getMessageType } from "@/utils/messageUtils";
 
 export default function NotFollowingBack() {
   const [loading, setLoading] = useState(true);
@@ -32,6 +33,11 @@ export default function NotFollowingBack() {
   // Use a ref to track processed operations to prevent duplicates
   const processedOps = useRef<Set<string>>(new Set());
 
+  // Helper function that wraps the global addUniqueMessage function with component state
+  const addMessage = (message: string) => {
+    addUniqueMessage(message, recentMessages, setRecentMessages, setProgress);
+  };
+
   useEffect(() => {
     const loadData = async () => {
       // If we've already started loading data, don't start again
@@ -40,38 +46,36 @@ export default function NotFollowingBack() {
 
       try {
         setLoading(true);
-        setProgress(["Starting to fetch data..."]);
+        setProgress(["🚀 Starting analysis of users not following back..."]);
 
         const opKey = "getUserId";
         if (!processedOps.current.has(opKey)) {
           processedOps.current.add(opKey);
           const currentUserId = await getUserId();
-          addUniqueMessage(`Obtained current user ID: ${currentUserId}`);
+          addMessage(`🔍 Obtained current user ID: ${currentUserId}`);
 
-          addUniqueMessage("⏳ Fetching followers list...");
+          addMessage("🔄 Fetching followers list...");
           const followers = await getMultipleUserRelations(
             [currentUserId],
             undefined,
             (message) => {
               if (message.includes("Fetched")) {
                 // Only add messages that contain "Fetched" and aren't duplicates
-                addUniqueMessage(`📥 FOLLOWERS: ${message}`);
+                addMessage(`📥 FOLLOWERS: ${message}`);
               } else if (message.includes("Retrying") && !isRateLimited) {
                 // Only show one rate limiting message at a time
                 setIsRateLimited(true);
 
                 // Always use 61 seconds for rate limit retries
                 const timeDisplayed = "1m 1s";
-                addUniqueMessage(
+                addMessage(
                   `⚠️ RATE LIMITED: ${message.replace(/Retrying in [\d.]+[ms]+/i, "Retrying in 1m 1s")}`,
                 );
 
                 // Always use 61 seconds (61000ms) for the wait
                 setTimeout(() => {
                   setIsRateLimited(false);
-                  addUniqueMessage(
-                    `✅ Rate limit wait completed (${timeDisplayed})`,
-                  );
+                  addMessage(`✅ Rate limit wait completed (${timeDisplayed})`);
                 }, 61000);
               }
             },
@@ -79,7 +83,7 @@ export default function NotFollowingBack() {
             { returnIds: true },
           );
 
-          addUniqueMessage("⏳ Fetching following list...");
+          addMessage("🔄 Fetching following list...");
           setIsRateLimited(false); // Reset rate limited state before next operation
 
           const following = await getMultipleUserRelations(
@@ -88,23 +92,21 @@ export default function NotFollowingBack() {
             (message) => {
               if (message.includes("Fetched")) {
                 // Only add messages that contain "Fetched" and aren't duplicates
-                addUniqueMessage(`📤 FOLLOWING: ${message}`);
+                addMessage(`📤 FOLLOWING: ${message}`);
               } else if (message.includes("Retrying") && !isRateLimited) {
                 // Only show one rate limiting message at a time
                 setIsRateLimited(true);
 
                 // Always use 61 seconds for rate limit retries
                 const timeDisplayed = "1m 1s";
-                addUniqueMessage(
+                addMessage(
                   `⚠️ RATE LIMITED: ${message.replace(/Retrying in [\d.]+[ms]+/i, "Retrying in 1m 1s")}`,
                 );
 
                 // Always use 61 seconds (61000ms) for the wait
                 setTimeout(() => {
                   setIsRateLimited(false);
-                  addUniqueMessage(
-                    `✅ Rate limit wait completed (${timeDisplayed})`,
-                  );
+                  addMessage(`✅ Rate limit wait completed (${timeDisplayed})`);
                 }, 61000);
               }
             },
@@ -126,94 +128,44 @@ export default function NotFollowingBack() {
               ? [followerData]
               : [];
 
-          addUniqueMessage(
-            `✅ Completed: Found ${followingIds.length} following and ${followerIds.length} followers`,
+          addMessage(
+            `📊 Data collected: ${followingIds.length} following and ${followerIds.length} followers`,
           );
 
           const notFollowing = followingIds.filter(
             (id) => !followerIds.includes(id) && !excluded.includes(id),
           );
 
+          // Add information about excluded users if any exist
+          if (excluded.length > 0) {
+            addMessage(
+              `ℹ️ ${excluded.length} users are excluded from analysis`,
+            );
+          }
+
           setNotFollowingBack(notFollowing);
           setExcludedIds(excluded);
-          addUniqueMessage(
-            `✅ Analysis complete: Found ${notFollowing.length} users not following back`,
-          );
+
+          if (notFollowing.length > 0) {
+            addMessage(
+              `🚨 Found ${notFollowing.length} users not following you back`,
+            );
+          } else {
+            addMessage(
+              `✅ Great news! All users you follow are following you back`,
+            );
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load data");
-        addUniqueMessage(
+        addMessage(
           `❌ ERROR: ${err instanceof Error ? err.message : "Failed to load data"}`,
         );
       } finally {
         setLoading(false);
         setIsRateLimited(false);
+        addMessage(`🏁 Analysis complete. Ready for action.`);
       }
-    };
-
-    // Helper function to add a message only if it's not a duplicate
-    const addUniqueMessage = (message: string) => {
-      // Keep track of the last 10 messages to check for duplicates
-      const MAX_RECENT_MESSAGES = 10;
-
-      // Create a unique fingerprint for this message
-      const msgFingerprint = message.replace(/\d+/g, (match) => {
-        // Keep the page numbers for page-specific messages
-        if (
-          message.includes("page") &&
-          message.match(/page (\d+)/)?.[1] === match
-        ) {
-          return match;
-        }
-        return "X";
-      });
-
-      // Check if this exact message already exists in recent messages
-      if (recentMessages.includes(message)) {
-        return;
-      }
-
-      // Check for "pattern duplicates" - same message with just different numbers
-      if (message.includes("Fetched page") || message.includes("User")) {
-        // Check if we have a message with the same pattern
-        const isDuplicate = recentMessages.some((oldMsg) => {
-          const oldPattern = oldMsg.replace(/\d+/g, (match) => {
-            // Keep the page numbers for page-specific messages
-            if (
-              oldMsg.includes("page") &&
-              oldMsg.match(/page (\d+)/)?.[1] === match
-            ) {
-              return match;
-            }
-            return "X";
-          });
-
-          return (
-            oldPattern === msgFingerprint &&
-            // If it's about the same page, it's definitely a duplicate
-            message.includes("page") &&
-            oldMsg.includes("page") &&
-            message.match(/page (\d+)/)?.at(1) ===
-              oldMsg.match(/page (\d+)/)?.at(1)
-          );
-        });
-
-        if (isDuplicate) {
-          return;
-        }
-      }
-
-      // Add the message to recent messages for future duplicate checking
-      setRecentMessages((prev) => {
-        const updated = [...prev, message];
-        // Keep only the most recent messages
-        return updated.length > MAX_RECENT_MESSAGES
-          ? updated.slice(updated.length - MAX_RECENT_MESSAGES)
-          : updated;
-      });
-
-      // Add the message to the progress
-      setProgress((prev) => [...prev, message]);
     };
 
     loadData();
@@ -224,7 +176,7 @@ export default function NotFollowingBack() {
     setExcludedIds(newExcluded);
     setNotFollowingBack((prev) => prev.filter((id) => id !== userId));
     saveExcludedIds(new Set(newExcluded));
-    setProgress((prev) => [...prev, `Excluded user #${userId} from list`]);
+    addMessage(`⏭️ Excluded user #${userId} from analysis`);
   };
 
   const handleBulkUnfollow = async () => {
@@ -232,28 +184,44 @@ export default function NotFollowingBack() {
     setError(null);
     const unfollowed: number[] = [];
 
+    addMessage(
+      `🔄 Starting bulk unfollow process for ${notFollowingBack.length} users...`,
+    );
+
     try {
+      let successCount = 0;
+      let failCount = 0;
+
       for (const userId of notFollowingBack) {
         try {
           const success = await unfollowUser(userId);
           if (success) {
             unfollowed.push(userId);
-            setProgress((prev) => [
-              ...prev,
-              `Successfully unfollowed user #${userId}`,
-            ]);
+            successCount++;
+            addMessage(
+              `✅ Unfollowed user #${userId} (${successCount}/${notFollowingBack.length})`,
+            );
+          } else {
+            failCount++;
+            addMessage(
+              `❌ Failed to unfollow user #${userId} - API returned unsuccessful status`,
+            );
           }
         } catch (err) {
-          setProgress((prev) => [
-            ...prev,
-            `Failed to unfollow user #${userId}: ${(err as Error).message}`,
-          ]);
+          failCount++;
+          addMessage(
+            `❌ Error unfollowing user #${userId}: ${(err as Error).message}`,
+          );
         }
       }
 
       saveUnfollowedIds(new Set([...loadUnfollowedIds(), ...unfollowed]));
       setNotFollowingBack((prev) =>
         prev.filter((id) => !unfollowed.includes(id)),
+      );
+
+      addMessage(
+        `🏁 Bulk unfollow complete: ${successCount} unfollowed, ${failCount} failed`,
       );
     } finally {
       setLoading(false);
@@ -262,6 +230,7 @@ export default function NotFollowingBack() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+    addMessage(`📋 Copied user IDs to clipboard`);
   };
 
   return (
@@ -301,6 +270,7 @@ export default function NotFollowingBack() {
               <Button
                 variant="secondary"
                 onClick={() => copyToClipboard(notFollowingBack.join(", "))}
+                disabled={notFollowingBack.length === 0}
               >
                 <Copy className="mr-2 h-4 w-4" />
                 Copy IDs
@@ -321,30 +291,38 @@ export default function NotFollowingBack() {
               </span>
             </div>
             <ScrollArea className="h-80 p-4">
-              {notFollowingBack.map((userId) => (
-                <div
-                  key={userId}
-                  className="mb-2 flex items-center justify-between rounded-lg bg-red-100/50 p-3 dark:bg-red-900/20"
-                >
-                  <span className="font-mono">#{userId}</span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(userId.toString())}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleExclude(userId)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+              {notFollowingBack.length > 0 ? (
+                notFollowingBack.map((userId) => (
+                  <div
+                    key={userId}
+                    className="mb-2 flex items-center justify-between rounded-lg bg-red-100/50 p-3 dark:bg-red-900/20"
+                  >
+                    <span className="font-mono">#{userId}</span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyToClipboard(userId.toString())}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleExclude(userId)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="text-muted-foreground flex h-full items-center justify-center">
+                  {loading
+                    ? "Loading users..."
+                    : "No users found not following back"}
                 </div>
-              ))}
+              )}
             </ScrollArea>
           </Card>
 
@@ -364,19 +342,21 @@ export default function NotFollowingBack() {
                   <div
                     key={index}
                     className={`rounded-lg p-3 ${
-                      msg.includes("ERROR")
-                        ? "bg-red-100/50 dark:bg-red-900/20"
-                        : msg.includes("RATE LIMITED")
-                          ? "bg-yellow-100/50 dark:bg-yellow-900/20"
-                          : msg.includes("Rate limit wait completed")
-                            ? "bg-green-100/50 dark:bg-green-900/20"
-                            : msg.includes("FOLLOWERS")
-                              ? "bg-blue-100/50 dark:bg-blue-900/20"
-                              : msg.includes("FOLLOWING")
+                      getMessageType(msg) === "success"
+                        ? "bg-green-100/50 dark:bg-green-900/20"
+                        : getMessageType(msg) === "error"
+                          ? "bg-red-100/50 dark:bg-red-900/20"
+                          : getMessageType(msg) === "warning"
+                            ? "bg-yellow-100/50 dark:bg-yellow-900/20"
+                            : getMessageType(msg) === "skipped"
+                              ? "bg-gray-100/50 dark:bg-gray-800/30"
+                              : getMessageType(msg) === "processing"
                                 ? "bg-purple-100/50 dark:bg-purple-900/20"
-                                : msg.includes("complete")
+                                : getMessageType(msg) === "complete"
                                   ? "bg-green-100/50 dark:bg-green-900/20"
-                                  : "bg-blue-100/50 dark:bg-blue-900/20"
+                                  : getMessageType(msg) === "data"
+                                    ? "bg-blue-100/50 dark:bg-blue-900/20"
+                                    : "bg-blue-100/50 dark:bg-blue-900/20"
                     }`}
                   >
                     {msg}
