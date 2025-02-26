@@ -58,6 +58,31 @@ jobs:
             echo "has_updates=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Check for existing PR
+        id: check-pr
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.update-packages == true || github.event_name != 'workflow_dispatch') && steps.check-updates.outputs.has_updates == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          PR_EXISTS=$(gh pr list --json number,title,headRefName --jq '.[] | select(.title == "chore: update npm dependencies" and .headRefName | startswith("deps/update-packages")) | .number')
+          if [ -n "$PR_EXISTS" ]; then
+            echo "Found existing PR #$PR_EXISTS"
+            echo "pr_exists=true" >> $GITHUB_OUTPUT
+            echo "pr_number=$PR_EXISTS" >> $GITHUB_OUTPUT
+            PR_BRANCH=$(gh pr view $PR_EXISTS --json headRefName --jq '.headRefName')
+            echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+          else
+            echo "No existing PR found."
+            echo "pr_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout existing PR branch
+        if: ${{ steps.check-pr.outputs.pr_exists == 'true' }}
+        run: |
+          git fetch origin
+          git checkout ${{ steps.check-pr.outputs.pr_branch }} || git checkout -b ${{ steps.check-pr.outputs.pr_branch }}
+          git pull origin ${{ steps.check-pr.outputs.pr_branch }} || true
+
       - name: Update packages
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.update-packages == true || github.event_name != 'workflow_dispatch') && steps.check-updates.outputs.has_updates == 'true' }}
         run: |
@@ -65,8 +90,17 @@ jobs:
           ncu -u
           npm install
 
-      - name: Create Pull Request
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.update-packages == true || github.event_name != 'workflow_dispatch') && steps.check-updates.outputs.has_updates == 'true' }}
+      - name: Commit changes to existing PR
+        if: ${{ steps.check-pr.outputs.pr_exists == 'true' && steps.check-updates.outputs.has_updates == 'true' }}
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json
+          git diff --staged --quiet || git commit -m "chore: update npm dependencies"
+          git push origin ${{ steps.check-pr.outputs.pr_branch }}
+
+      - name: Create new Pull Request
+        if: ${{ steps.check-pr.outputs.pr_exists != 'true' && (github.event_name == 'workflow_dispatch' && inputs.update-packages == true || github.event_name != 'workflow_dispatch') && steps.check-updates.outputs.has_updates == 'true' }}
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}
@@ -85,6 +119,5 @@ jobs:
             ```
             </details>
           branch: deps/update-packages
-          branch-suffix: timestamp
           delete-branch: true
           base: electron-app
