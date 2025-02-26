@@ -31,12 +31,18 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm ci
-      - name: Check for package updates
+      - name: Install npm-check-updates and tools
         run: |
           npm install -g npm-check-updates
-          # Create temporary file for ncu output
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Check for package updates
+        id: check-updates
+        run: |
+          # Capture ncu output
           NCU_OUTPUT=$(ncu)
-          
+
           # Use echo to write to GITHUB_STEP_SUMMARY
           echo "## 📦 Package Updates Available" >> $GITHUB_STEP_SUMMARY
           echo "The following packages can be updated:" >> $GITHUB_STEP_SUMMARY
@@ -47,5 +53,46 @@ jobs:
           echo "1. Run manually: npm run update" >> $GITHUB_STEP_SUMMARY
           echo "2. Use the 'Check for Package Updates' workflow with the 'update-packages' option enabled" >> $GITHUB_STEP_SUMMARY
 
-          # This is just for information, don't fail if updates are available
-          exit 0
+          # Capture JSON output for PR creation
+          UPDATE_INFO=$(ncu --jsonUpgraded)
+          echo "update_info<<EOF" >> $GITHUB_OUTPUT
+          echo "$UPDATE_INFO" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Check if there are updates
+          if [ "$(echo "$UPDATE_INFO" | jq 'length')" -gt 0 ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update packages
+        if: ${{ steps.check-updates.outputs.has_updates == 'true' }}
+        run: |
+          # Update packages and install
+          ncu -u
+          npm install
+
+      - name: Create Pull Request
+        if: ${{ steps.check-updates.outputs.has_updates == 'true' }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update npm dependencies"
+          title: "chore: update npm dependencies"
+          body: |
+            This PR updates npm dependencies to their latest versions.
+
+            Updated automatically by GitHub Actions after detecting available updates.
+
+            <details>
+            <summary>Package Updates</summary>
+
+            ```json
+            ${{ steps.check-updates.outputs.update_info }}
+            ```
+            </details>
+          branch: deps/update-packages
+          branch-suffix: timestamp
+          delete-branch: true
+          base: electron-app

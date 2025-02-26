@@ -6,7 +6,7 @@ on:
         description: "Automatically update package.json (creates PR)"
         required: false
         type: boolean
-        default: false
+        default: true
   schedule:
     - cron: "0 0 * * 1"
 
@@ -31,7 +31,7 @@ jobs:
         run: |
           # Capture ncu output
           NCU_OUTPUT=$(ncu)
-          
+
           # Use echo to write to GITHUB_STEP_SUMMARY
           echo "## 📦 Package Updates Available" >> $GITHUB_STEP_SUMMARY
           echo "The following packages can be updated:" >> $GITHUB_STEP_SUMMARY
@@ -39,13 +39,13 @@ jobs:
           echo "$NCU_OUTPUT" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "To update all packages, run: npm run update" >> $GITHUB_STEP_SUMMARY
-          
+
           # Capture JSON output for PR creation
           UPDATE_INFO=$(ncu --jsonUpgraded)
           echo "update_info<<EOF" >> $GITHUB_OUTPUT
           echo "$UPDATE_INFO" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
+
           # Check if there are updates
           if [ "$(echo "$UPDATE_INFO" | jq 'length')" -gt 0 ]; then
             echo "has_updates=true" >> $GITHUB_OUTPUT
@@ -69,12 +69,12 @@ jobs:
           title: "chore: update npm dependencies"
           body: |
             This PR updates npm dependencies to their latest versions.
-            
-            Updated by GitHub Actions.
-            
+
+            Updated manually via GitHub Actions workflow dispatch.
+
             <details>
             <summary>Package Updates</summary>
-            
+
             ```json
             ${{ steps.check-updates.outputs.update_info }}
             ```
